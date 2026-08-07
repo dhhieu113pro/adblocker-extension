@@ -1,0 +1,19 @@
+{
+  "name": "webllm-adblocker-extension",
+  "version": "1.0.0",
+  "description": "AI-Powered Visual & Heuristic Ad Blocker Chrome Extension using CLIP Zero-Shot Classification & Offscreen WASM",
+  "scripts": {
+    "dev": "parcel watch src/manifest.json --config @parcel/config-webextension --no-source-maps",
+    "build": "parcel build src/manifest.json --config @parcel/config-webextension --no-source-maps && npm run copy-wasm",
+    "copy-wasm": "node scripts/copy-wasm.js"
+  },
+  "dependencies": {
+    "@xenova/transformers": "^2.17.2"
+  },
+  "devDependencies": {
+    "@parcel/config-webextension": "^2.12.0",
+    "@types/chrome": "^0.0.268",
+    "parcel": "^2.12.0",
+    "typescript": "^5.4.5"
+  }
+}

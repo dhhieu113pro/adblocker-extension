@@ -1,0 +1,678 @@
+// AI Vision & Heuristic Ad Blocker Content Script
+class AdBlockerOverlay {
+  constructor() {
+    this.processedImages = new WeakSet();
+    this.detectedAdsMap = new Map();
+    this.autoHideAds = true;
+    this.lastRightClickedElement = null;
+    this.init();
+  }
+
+  async init() {
+    this.injectGlobalStyles();
+    this.loadSettings();
+    this.scanImages();
+    this.setupMutationObserver();
+    this.initMessageListener();
+    this.setupContextMenuTracker();
+  }
+
+  setupContextMenuTracker() {
+    document.addEventListener(
+      "contextmenu",
+      (e) => {
+        this.lastRightClickedElement = e.target;
+      },
+      true
+    );
+  }
+
+  injectGlobalStyles() {
+    if (document.getElementById("webllm-adblocker-style")) return;
+    const style = document.createElement("style");
+    style.id = "webllm-adblocker-style";
+    style.textContent = `
+      [data-webllm-ad-hidden="true"],
+      [data-webllm-ad-hidden="true"] * {
+        display: none !important;
+        visibility: hidden !important;
+        height: 0 !important;
+        max-height: 0 !important;
+        min-height: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+      }
+    `;
+    (document.head || document.documentElement).appendChild(style);
+  }
+
+  loadSettings() {
+    chrome.storage?.sync?.get(["autoHideAds"], (res) => {
+      if (res.autoHideAds !== undefined) {
+        this.autoHideAds = res.autoHideAds;
+      }
+    });
+
+    chrome.storage?.onChanged?.addListener((changes, area) => {
+      if (area === "sync" && changes.autoHideAds) {
+        this.autoHideAds = changes.autoHideAds.newValue;
+        if (this.autoHideAds) {
+          this.scanImages();
+        }
+      }
+    });
+  }
+
+  initMessageListener() {
+    chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+      if (message.type === "getTabDetectedAds") {
+        const adsList = Array.from(this.detectedAdsMap.values()).map((ad) => ({
+          id: ad.id,
+          url: ad.url,
+          domain: ad.domain,
+          width: ad.width,
+          height: ad.height,
+          confidence: ad.confidence,
+          method: ad.method,
+          reasons: ad.reasons,
+          isHidden: ad.isHidden,
+        }));
+        sendResponse({ success: true, ads: adsList });
+        return true;
+      }
+
+      if (message.type === "toggleAdVisibility") {
+        const adInfo = this.detectedAdsMap.get(message.adId);
+        if (adInfo && adInfo.targetElement) {
+          if (message.hide) {
+            this.hideElement(adInfo.targetElement);
+            adInfo.isHidden = true;
+          } else {
+            this.unhideElement(adInfo.targetElement);
+            adInfo.isHidden = false;
+          }
+          sendResponse({ success: true, isHidden: adInfo.isHidden });
+        } else {
+          sendResponse({ success: false, error: "Ad element not found" });
+        }
+        return true;
+      }
+
+      if (message.type === "analyzeContextImage") {
+        let targetImg = null;
+        if (this.lastRightClickedElement && this.lastRightClickedElement.tagName === "IMG") {
+          targetImg = this.lastRightClickedElement;
+        } else if (message.imageUrl) {
+          const imgs = Array.from(document.querySelectorAll("img"));
+          targetImg = imgs.find((i) => (i.currentSrc || i.src) === message.imageUrl);
+        }
+
+        if (targetImg) {
+          this.analyzeImage(targetImg);
+        } else if (message.imageUrl) {
+          this.analyzeImageUrl(message.imageUrl);
+        }
+        return true;
+      }
+
+      return false;
+    });
+  }
+
+  hideElement(el) {
+    if (!el) return;
+    el.dataset.webllmAdHidden = "true";
+    el.style.setProperty("display", "none", "important");
+    el.style.setProperty("visibility", "hidden", "important");
+    el.style.setProperty("height", "0px", "important");
+  }
+
+  unhideElement(el) {
+    if (!el) return;
+    delete el.dataset.webllmAdHidden;
+    el.style.removeProperty("display");
+    el.style.removeProperty("visibility");
+    el.style.removeProperty("height");
+    if (el.dataset.webllmOriginalDisplay) {
+      el.style.display = el.dataset.webllmOriginalDisplay;
+    }
+  }
+
+  setupMutationObserver() {
+    const observer = new MutationObserver((mutations) => {
+      for (const m of mutations) {
+        if (m.type === "attributes" && m.attributeName === "style" && m.target) {
+          const target = m.target;
+          if (target.dataset?.webllmAdHidden === "true") {
+            if (target.style.display !== "none" || target.style.visibility !== "hidden") {
+              this.hideElement(target);
+            }
+          }
+        }
+      }
+      this.scanImages();
+    });
+    observer.observe(document.body || document.documentElement, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["style"],
+    });
+  }
+
+  isAdBannerCandidate(img) {
+    const width = img.width || img.naturalWidth || 0;
+    const height = img.height || img.naturalHeight || 0;
+    const url = (img.currentSrc || img.src || "").toLowerCase();
+
+    if (width > 0 && height > 0) {
+      const ratio = width / height;
+      const invRatio = height / width;
+      if (ratio >= 3.0 || invRatio >= 3.0) return true;
+
+      const iabSizes = [
+        [728, 90], [468, 60], [320, 50], [300, 250], [336, 280],
+        [120, 600], [160, 600], [300, 600], [970, 90], [970, 250], [300, 100]
+      ];
+      const isIab = iabSizes.some(([w, h]) => Math.abs(w - width) <= 25 && Math.abs(h - height) <= 20);
+      if (isIab) return true;
+    }
+
+    const adKeywords = [
+      "storage/images/other", "api.mamphim", "banner", "ads", "adserver",
+      "vsbet", "colatv", "8svui", "i9.top", "betting", "casino", "nhacai",
+      "hoahong", "promotions", "affiliate", "sponsor", "game", "worldcup",
+      "eclick", "smartads", "adtima", "static.znews.vn/banner", "adsbyeclick"
+    ];
+    if (adKeywords.some((kw) => url.includes(kw))) return true;
+
+    return false;
+  }
+
+  isAdIframeCandidate(iframe) {
+    const width = iframe.offsetWidth || parseInt(iframe.getAttribute("width") || "0", 10) || 0;
+    const height = iframe.offsetHeight || parseInt(iframe.getAttribute("height") || "0", 10) || 0;
+    const id = (iframe.id || "").toLowerCase();
+    const className = (iframe.className || "").toString().toLowerCase();
+    const src = (iframe.src || "").toLowerCase();
+    const name = (iframe.name || "").toLowerCase();
+
+    const adIframeKeywords = [
+      "vli", "vliifrwrapper", "google_ads", "aswift", "ad-iframe", "ad_iframe",
+      "adframe", "banner", "taboola", "outbrain", "ezoic", "doubleclick",
+      "adservice", "adserver", "pubads", "amazon-ads", "criteo", "popads",
+      "mgid", "exoclick", "propeller", "juicyads", "adscatfish", "sspp", "z2-vli",
+      "eclick", "smartads", "adsbyeclick", "adnzone", "adxzone", "adx", "admicro",
+      "ssppage", "sspbid", "tvcpzone", "admrick", "mediumiframe", "populartooth",
+      "lura.", "contineljs", "adn", "sponsor", "ssppagebid", "admsticky"
+    ];
+
+    const matchesKeyword = adIframeKeywords.some(
+      (kw) => id.includes(kw) || className.includes(kw) || src.includes(kw) || name.includes(kw)
+    );
+
+    if (matchesKeyword) return true;
+
+    // Check parent ancestors (up to 4 levels) for ad network markers or data attributes
+    let parent = iframe.parentElement;
+    for (let i = 0; i < 4 && parent && parent !== document.body; i++) {
+      const pId = (parent.id || "").toLowerCase();
+      const pCls = (parent.className || "").toString().toLowerCase();
+      const pDataSsp = (parent.getAttribute("data-ssp") || "").toLowerCase();
+      const pDataAdm = (parent.getAttribute("data-admssprqid") || "").toLowerCase();
+
+      if (
+        pDataSsp || pDataAdm ||
+        adIframeKeywords.some((kw) => pId.includes(kw) || pCls.includes(kw)) ||
+        pCls.includes("banner0") || pId.includes("advzone") || pId.includes("adm")
+      ) {
+        return true;
+      }
+      parent = parent.parentElement;
+    }
+
+    // Exclude legitimate non-ad video/map embeds
+    const nonAdDomains = ["youtube.com", "youtu.be", "vimeo.com", "google.com/maps", "openstreetmap.org", "player.vimeo.com"];
+    if (nonAdDomains.some((domain) => src.includes(domain))) {
+      return false;
+    }
+
+    if (width > 0 && height > 0) {
+      const ratio = width / height;
+      const invRatio = height / width;
+      if (ratio >= 3.0 || invRatio >= 3.0) return true;
+
+      const iabSizes = [
+        [728, 90], [468, 60], [320, 50], [300, 250], [336, 280],
+        [120, 600], [160, 600], [300, 600], [970, 90], [970, 250], [300, 280],
+        [300, 604], [475, 325]
+      ];
+      const isIab = iabSizes.some(([w, h]) => Math.abs(w - width) <= 25 && Math.abs(h - height) <= 20);
+      if (isIab) return true;
+    }
+
+    return false;
+  }
+
+  scanIframes() {
+    if (!this.autoHideAds) return;
+
+    const iframes = Array.from(document.querySelectorAll("iframe"));
+    iframes.forEach((iframe) => {
+      if (this.processedImages.has(iframe)) return;
+
+      if (this.isAdIframeCandidate(iframe)) {
+        this.processedImages.add(iframe);
+        this.hideAdIframe(iframe);
+      }
+    });
+  }
+
+  hideAdIframe(iframe) {
+    // Target the iframe directly to avoid hiding outer page containers safely
+    const targetElement = iframe;
+    if (targetElement.dataset.webllmAdHidden === "true") return;
+
+    const originalDisplay = targetElement.style.display || "";
+    targetElement.dataset.webllmOriginalDisplay = originalDisplay;
+    this.hideElement(targetElement);
+
+    if (iframe.parentElement) {
+      const adLogos = iframe.parentElement.querySelectorAll('a[href*="admicro"], [class*="admLogo"], .txtlogo');
+      adLogos.forEach((logo) => this.hideElement(logo));
+    }
+
+    const adId = iframe.dataset.webllmAdId || "iframe_" + Math.random().toString(36).substr(2, 9);
+    iframe.dataset.webllmAdId = adId;
+
+    const width = iframe.offsetWidth || parseInt(iframe.getAttribute("width") || "0", 10) || 300;
+    const height = iframe.offsetHeight || parseInt(iframe.getAttribute("height") || "0", 10) || 250;
+    const src = iframe.src || iframe.id || "Ad Iframe";
+    let domain = "ad network iframe";
+    try {
+      if (iframe.src && !iframe.src.startsWith("javascript:")) {
+        domain = new URL(iframe.src).hostname;
+      } else if (iframe.id) {
+        domain = iframe.id.split("_")[0];
+      }
+    } catch {}
+
+    const adInfo = {
+      id: adId,
+      url: src,
+      domain: domain || "iframe ad",
+      width,
+      height,
+      confidence: 95,
+      method: "Iframe Ad Network Detector",
+      reasons: [`Ad Iframe detected (${iframe.id || iframe.className || "ad-frame"})`],
+      isHidden: true,
+      targetElement,
+      imgElement: iframe,
+      originalDisplay,
+    };
+
+    this.detectedAdsMap.set(adId, adInfo);
+  }
+
+  scanImages() {
+    this.scanIframes();
+    const images = Array.from(document.querySelectorAll("img"));
+    images.forEach((img) => {
+      if (this.processedImages.has(img)) return;
+
+      const checkAndProcess = () => {
+        if (!this.isAdBannerCandidate(img)) return;
+
+        this.processedImages.add(img);
+
+        const width = img.width || img.naturalWidth;
+        const height = img.height || img.naturalHeight;
+
+        if (this.autoHideAds) {
+          const imgSrc = img.currentSrc || img.src;
+          chrome.runtime.sendMessage(
+            {
+              type: "detectAd",
+              imageUrl: imgSrc,
+              width,
+              height,
+            },
+            (res) => {
+              if (res?.isAd && res.confidence >= 50) {
+                this.hideAd(img, res);
+                this.cleanupEmptyAdContainers();
+              }
+            }
+          );
+        }
+      };
+
+      if (img.complete) {
+        checkAndProcess();
+      } else {
+        img.addEventListener("load", checkAndProcess, { once: true });
+      }
+    });
+
+    this.cleanupEmptyAdContainers();
+  }
+
+  getAdTargetContainer(img) {
+    let curr = img;
+    let bestContainer = img;
+
+    for (let i = 0; i < 8 && curr && curr.parentElement && curr.parentElement !== document.body; i++) {
+      const parent = curr.parentElement;
+      const tag = parent.tagName.toLowerCase();
+      const cls = (parent.className || "").toString().toLowerCase();
+      const id = (parent.id || "").toString().toLowerCase();
+
+      if (
+        cls.includes("wrapper-sticky") ||
+        cls.includes("item-ads-v25") ||
+        cls.includes("item-ads-v16") ||
+        cls.includes("slide-shopping-ads") ||
+        cls.includes("icon-sma") ||
+        cls.includes("ads-tag") ||
+        cls.includes("eclick") ||
+        cls.includes("smartads") ||
+        cls.includes("custom-ad") ||
+        cls.includes("ad_frame_protection") ||
+        cls.includes("item-ads") ||
+        cls.includes("section-ads") ||
+        cls.includes("banner-ads") ||
+        cls.includes("banner-top") ||
+        cls.includes("masthead") ||
+        cls.includes("znews-banner") ||
+        cls.includes("adscatfish") ||
+        cls.includes("sspp-area") ||
+        cls.includes("catfish") ||
+        cls.includes("is-catfish") ||
+        cls.includes("ad-area") ||
+        cls.includes("ad-wrapper") ||
+        cls.includes("ad-container") ||
+        cls.includes("banner-wrapper") ||
+        cls.includes("banner-container") ||
+        id.includes("eclick") ||
+        id.includes("smartads") ||
+        id.includes("masthead") ||
+        id.includes("supper_") ||
+        id.includes("zingnews_") ||
+        id.includes("ad-area") ||
+        id.includes("banner-area")
+      ) {
+        return parent;
+      }
+
+      if (parent.querySelector(".close-it, .close-ad, .close_not_qc, [class*='close-ad'], [class*='ad-close'], [class*='close-it']")) {
+        return parent;
+      }
+
+      if (
+        tag === "a" ||
+        tag === "section" ||
+        tag === "figure" ||
+        tag === "picture" ||
+        cls.includes("ad") ||
+        cls.includes("banner") ||
+        cls.includes("sponsor") ||
+        id.includes("ad") ||
+        id.includes("banner")
+      ) {
+        bestContainer = parent;
+      }
+
+      curr = parent;
+    }
+
+    return bestContainer;
+  }
+
+  cleanupEmptyAdContainers() {
+    if (!this.autoHideAds) return;
+
+    const selector = `
+      section.banner-ads, section.section-ads-top, .znews-banner, .z2-VLi-zone,
+      .sspp-area, .adscatfish-container, [id*="supper_masthead"], [id*="ZingNews_"],
+      [class*="banner-ads"], [class*="section-ads"], [class*="banner-top"],
+      .custom-ad-eclick, .eclick_ad_holder, [id*="eclick"], [class*="eclick"],
+      ins.adsbyeclick, #boxTinTaiTro, .wrapper-sticky, .item-ads-v25, .item-ads-v16,
+      .slide-shopping-ads-viewport, .box-shopping-ads
+    `;
+    const containers = Array.from(document.querySelectorAll(selector));
+
+    containers.forEach((container) => {
+      if (container.dataset.webllmAdHidden === "true") return;
+
+      const imgs = Array.from(container.querySelectorAll("img"));
+      if (imgs.length === 0) return;
+
+      const visibleMedia = imgs.filter((media) => {
+        const style = window.getComputedStyle(media);
+        return style.display !== "none" && style.visibility !== "hidden" && media.offsetWidth > 0;
+      });
+
+      if (visibleMedia.length === 0) {
+        this.hideElement(container);
+      }
+    });
+  }
+
+  hideAd(img, res) {
+    const targetElement = this.getAdTargetContainer(img);
+    if (targetElement.dataset.webllmAdHidden === "true") return;
+
+    const originalDisplay = targetElement.style.display || "";
+    targetElement.dataset.webllmOriginalDisplay = originalDisplay;
+    this.hideElement(targetElement);
+
+    const closeBtn = targetElement.querySelector(".close-it, .close-ad, .close_not_qc, [class*='close-ad'], [class*='ad-close']");
+    if (closeBtn) this.hideElement(closeBtn);
+
+    const adId = img.dataset.webllmAdId || "ad_" + Math.random().toString(36).substr(2, 9);
+    img.dataset.webllmAdId = adId;
+
+    const width = img.width || img.naturalWidth;
+    const height = img.height || img.naturalHeight;
+    const url = img.currentSrc || img.src;
+
+    let domain = "";
+    try {
+      domain = new URL(url).hostname;
+    } catch {
+      domain = "unknown";
+    }
+
+    const adInfo = {
+      id: adId,
+      url,
+      domain,
+      width,
+      height,
+      confidence: res.confidence,
+      method: res.method,
+      reasons: res.reasons,
+      isHidden: true,
+      targetElement,
+      imgElement: img,
+      originalDisplay,
+    };
+
+    this.detectedAdsMap.set(adId, adInfo);
+  }
+
+  async analyzeImage(img) {
+    try {
+      const imgSrc = img.currentSrc || img.src;
+      const width = img.width || img.naturalWidth || 300;
+      const height = img.height || img.naturalHeight || 250;
+
+      let imageDataUrl = "";
+      try {
+        const fetchRes = await new Promise((resolve) => {
+          chrome.runtime.sendMessage(
+            { type: "fetchImageAsBase64", url: imgSrc },
+            (response) => resolve(response)
+          );
+        });
+        if (fetchRes?.base64) {
+          imageDataUrl = fetchRes.base64;
+        }
+      } catch (err) {
+        console.warn("[AdBlocker] Failed to fetch base64:", err);
+      }
+
+      chrome.runtime.sendMessage(
+        {
+          type: "detectAd",
+          imageUrl: imgSrc,
+          imageDataUrl,
+          width,
+          height,
+          forceAI: true,
+        },
+        (res) => {
+          if (res?.success) {
+            if (res.isAd && img) {
+              this.hideAd(img, res);
+            }
+            this.showResultModal(img, res);
+          } else {
+            alert("Detection Error: " + (res?.error || "Unknown error"));
+          }
+        }
+      );
+    } catch (err) {
+      alert("Error analyzing image: " + err);
+    }
+  }
+
+  async analyzeImageUrl(imageUrl) {
+    try {
+      let imageDataUrl = "";
+      try {
+        const fetchRes = await new Promise((resolve) => {
+          chrome.runtime.sendMessage(
+            { type: "fetchImageAsBase64", url: imageUrl },
+            (response) => resolve(response)
+          );
+        });
+        if (fetchRes?.base64) {
+          imageDataUrl = fetchRes.base64;
+        }
+      } catch (err) {
+        console.warn("[AdBlocker] Failed to fetch base64:", err);
+      }
+
+      chrome.runtime.sendMessage(
+        {
+          type: "detectAd",
+          imageUrl: imageUrl,
+          imageDataUrl,
+          width: 300,
+          height: 250,
+          forceAI: true,
+        },
+        (res) => {
+          if (res?.success) {
+            this.showResultModal(null, res);
+          } else {
+            alert("Detection Error: " + (res?.error || "Unknown error"));
+          }
+        }
+      );
+    } catch (err) {
+      alert("Error analyzing image: " + err);
+    }
+  }
+
+  showResultModal(img, res) {
+    const existing = document.getElementById("webllm-ad-modal");
+    if (existing) existing.remove();
+
+    let targetElement = null;
+    let isHidden = false;
+    if (img && img.tagName) {
+      targetElement = this.getAdTargetContainer(img);
+      isHidden = targetElement.dataset.webllmAdHidden === "true" || targetElement.style.display === "none";
+    }
+
+    const modal = document.createElement("div");
+    modal.id = "webllm-ad-modal";
+    Object.assign(modal.style, {
+      position: "fixed",
+      top: "50%",
+      left: "50%",
+      transform: "translate(-50%, -50%)",
+      zIndex: "2147483647",
+      backgroundColor: "#0f172a",
+      color: "#f8fafc",
+      padding: "24px",
+      borderRadius: "16px",
+      boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.7)",
+      fontFamily: "system-ui, -apple-system, sans-serif",
+      maxWidth: "420px",
+      width: "90%",
+      border: "1px solid #334155",
+    });
+
+    const titleColor = res.isAd ? "#ef4444" : "#10b981";
+    const statusIcon = res.isAd ? "🚨" : "✅";
+    const statusText = res.isAd ? "Ad Detected" : "Clean Image";
+
+    modal.innerHTML = `
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <h3 style="margin: 0; font-size: 18px; color: ${titleColor}; display: flex; align-items: center; gap: 8px;">
+          ${statusIcon} ${statusText} (${res.confidence}% confidence)
+        </h3>
+        <button id="webllm-close-modal" style="background: none; border: none; color: #94a3b8; font-size: 20px; cursor: pointer;">&times;</button>
+      </div>
+      
+      <div style="font-size: 13px; color: #cbd5e1; margin-bottom: 16px;">
+        <strong>Detection Method:</strong> ${res.method || "Heuristics Engine"}
+      </div>
+
+      <div style="background-color: #1e293b; padding: 12px; border-radius: 8px; font-size: 13px; margin-bottom: 20px;">
+        <div style="font-weight: 600; margin-bottom: 6px; color: #94a3b8;">Detection Reasons:</div>
+        <ul style="margin: 0; padding-left: 18px; color: #e2e8f0;">
+          ${(res.reasons || []).map((r) => `<li style="margin-bottom: 4px;">${r}</li>`).join("")}
+        </ul>
+      </div>
+
+      <div style="display: flex; gap: 12px; justify-content: flex-end;">
+        ${
+          targetElement
+            ? `<button id="webllm-toggle-hide" style="padding: 8px 16px; border-radius: 8px; border: none; font-weight: 600; cursor: pointer; background-color: ${
+                isHidden ? "#3b82f6" : "#dc2626"
+              }; color: white;">
+                ${isHidden ? "Unhide Container" : "Hide Container"}
+              </button>`
+            : ""
+        }
+        <button id="webllm-dismiss-modal" style="padding: 8px 16px; border-radius: 8px; border: 1px solid #475569; background: #334155; color: white; cursor: pointer;">Close</button>
+      </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    document.getElementById("webllm-close-modal").onclick = () => modal.remove();
+    document.getElementById("webllm-dismiss-modal").onclick = () => modal.remove();
+
+    const toggleBtn = document.getElementById("webllm-toggle-hide");
+    if (toggleBtn && targetElement) {
+      toggleBtn.onclick = () => {
+        if (isHidden) {
+          this.unhideElement(targetElement);
+        } else {
+          this.hideElement(targetElement);
+        }
+        modal.remove();
+      };
+    }
+  }
+}
+
+new AdBlockerOverlay();

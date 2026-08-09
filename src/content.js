@@ -364,6 +364,12 @@ class AdBlockerOverlay {
     let curr = img;
     let bestContainer = img;
 
+    const matchesAdWord = (str) => {
+      if (!str) return false;
+      return /\b(ads?|banner|sponsor(ed)?)\b/i.test(str) ||
+             /(^|[-_])(ads?|banner|sponsor(ed)?)([-_]|$)/i.test(str);
+    };
+
     for (let i = 0; i < 8 && curr && curr.parentElement && curr.parentElement !== document.body; i++) {
       const parent = curr.parentElement;
       const tag = parent.tagName.toLowerCase();
@@ -416,11 +422,8 @@ class AdBlockerOverlay {
         tag === "section" ||
         tag === "figure" ||
         tag === "picture" ||
-        cls.includes("ad") ||
-        cls.includes("banner") ||
-        cls.includes("sponsor") ||
-        id.includes("ad") ||
-        id.includes("banner")
+        matchesAdWord(cls) ||
+        matchesAdWord(id)
       ) {
         bestContainer = parent;
       }
@@ -462,15 +465,18 @@ class AdBlockerOverlay {
   }
 
   hideAd(img, res) {
-    const targetElement = this.getAdTargetContainer(img);
+    // Target the img directly to avoid hiding outer page layouts/navigation menus safely
+    const targetElement = img;
     if (targetElement.dataset.webllmAdHidden === "true") return;
 
     const originalDisplay = targetElement.style.display || "";
     targetElement.dataset.webllmOriginalDisplay = originalDisplay;
     this.hideElement(targetElement);
 
-    const closeBtn = targetElement.querySelector(".close-it, .close-ad, .close_not_qc, [class*='close-ad'], [class*='ad-close']");
-    if (closeBtn) this.hideElement(closeBtn);
+    if (img.parentElement) {
+      const closeBtn = img.parentElement.querySelector(".close-it, .close-ad, .close_not_qc, [class*='close-ad'], [class*='ad-close']");
+      if (closeBtn) this.hideElement(closeBtn);
+    }
 
     const adId = img.dataset.webllmAdId || "ad_" + Math.random().toString(36).substr(2, 9);
     img.dataset.webllmAdId = adId;
@@ -596,7 +602,7 @@ class AdBlockerOverlay {
     let targetElement = null;
     let isHidden = false;
     if (img && img.tagName) {
-      targetElement = this.getAdTargetContainer(img);
+      targetElement = img;
       isHidden = targetElement.dataset.webllmAdHidden === "true" || targetElement.style.display === "none";
     }
 

@@ -317,4 +317,26 @@
       }
     }
   }, true);
+
+  // Native Player API Skipper (runs in MAIN world to access window player instances)
+  setInterval(() => {
+    try {
+      // 1. JW Player API Skip
+      if (typeof (window as any).jwplayer === "function") {
+        const jw = (window as any).jwplayer();
+        if (jw && typeof jw.skipAd === "function") {
+          // Find if there is a skip button visible or counting down
+          const skipBtn = document.querySelector(".jw-skip, .jw-skippable, .jw-skip-icon, .jw-skiptext");
+          if (skipBtn && (skipBtn as HTMLElement).offsetWidth > 0) {
+            // Check if it's ready to skip (no active countdown numbers 1-9 in innerText)
+            const text = (skipBtn as HTMLElement).innerText || "";
+            if (!/[1-9]/.test(text)) {
+              jw.skipAd();
+              console.log("[AdBlocker] Native JW Player API skipped the advertisement.");
+            }
+          }
+        }
+      }
+    } catch (e) {}
+  }, 500);
 })();

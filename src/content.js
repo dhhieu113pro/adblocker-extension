@@ -793,13 +793,12 @@ class AdBlockerOverlay {
       const aria = (el.getAttribute("aria-label") || "").toLowerCase();
 
       const isMatchText = 
-        text === "bỏ qua" || 
-        text === "skip" || 
-        text.includes("bỏ qua quảng cáo") || 
-        text.includes("bỏ qua qc") || 
-        text.includes("skip ad") || 
-        text.includes("skip_ad") || 
-        text.includes("skip ad button") ||
+        /bỏ\s*qua/i.test(text) ||
+        /bo\s*qua/i.test(text) ||
+        /skip/i.test(text) ||
+        /quảng\s*cáo/i.test(text) ||
+        /advert/i.test(text) ||
+        /qc/i.test(text) ||
         aria.includes("bỏ qua") ||
         aria.includes("skip");
 
@@ -836,10 +835,11 @@ class AdBlockerOverlay {
 
         // 3. Auto-click if skip is ready (no countdown digits)
         const btnText = (skipBtn.innerText || skipBtn.textContent || "").trim();
-        const hasCountdown = /\d+\s*(s|giây| giây)/i.test(btnText) || 
+        const hasCountdown = /\d/.test(btnText) || 
                             (skipBtn.disabled) || 
                             (skipBtn.getAttribute("disabled") !== null) ||
-                            (skipBtn.className || "").toString().toLowerCase().includes("disabled");
+                            (skipBtn.className || "").toString().toLowerCase().includes("disabled") ||
+                            (skipBtn.className || "").toString().toLowerCase().includes("waiting");
 
         if (!hasCountdown) {
           console.log("[AdBlocker] Clickable skip button found! Auto-skipping video ad.");

@@ -3,7 +3,7 @@
     "rg.pro.vn", "bboocclink", "154.82.109.", "adcenter", "vsbet", 
     "colatv", "8svui", "i9.top", "betting", "casino", "nhacai",
     "affiliate", "promos", "redirect", "sponsored", "adserver",
-    "advert", "popup", "clickunder", "popunder"
+    "advert", "popup", "clickunder", "popunder", "shortlink", "workers.dev"
   ];
 
   const isAdUrl = (url: any): boolean => {
@@ -43,20 +43,56 @@
 
       return true; // External origin popup is blocked!
     } catch {
-      return false; // Fallback on parse errors (safely allow)
+      return false; // Fallback on parse errors
     }
   };
 
-  // Hook window.open
+  // Hook window.open and return Proxy to catch blank window locations
   const originalOpen = window.open;
   (window as any).open = function(url?: string | URL, target?: string, features?: string) {
-    if (url) {
-      if (isAdUrl(url) || isExternalAdUrl(url)) {
-        console.warn("[AdBlocker] Hook blocked window.open popup redirect to:", url);
-        return null;
-      }
+    const urlStr = url ? url.toString() : "";
+    if (urlStr && (isAdUrl(urlStr) || isExternalAdUrl(urlStr))) {
+      console.warn("[AdBlocker] Hook blocked window.open popup redirect to:", urlStr);
+      return null;
     }
-    return originalOpen.apply(this, arguments as any);
+
+    const newWin = originalOpen.apply(this, arguments as any);
+    if (!newWin) return newWin;
+
+    try {
+      // Intercept dynamic writes to location (e.g. win.location = adUrl or win.location.href = adUrl)
+      return new Proxy(newWin, {
+        get(targetObj, prop) {
+          if (prop === "location") {
+            return new Proxy(targetObj.location, {
+              set(locTarget, locProp, val) {
+                if (val && (isAdUrl(val) || isExternalAdUrl(val))) {
+                  console.warn("[AdBlocker] Blocked location write on opened window to:", val);
+                  return true;
+                }
+                (locTarget as any)[locProp] = val;
+                return true;
+              }
+            });
+          }
+          const val = (targetObj as any)[prop];
+          if (typeof val === "function") {
+            return val.bind(targetObj);
+          }
+          return val;
+        },
+        set(targetObj, prop, val) {
+          if (prop === "location" && val && (isAdUrl(val) || isExternalAdUrl(val))) {
+            console.warn("[AdBlocker] Blocked location assignment on opened window to:", val);
+            return true;
+          }
+          (targetObj as any)[prop] = val;
+          return true;
+        }
+      });
+    } catch (e) {
+      return newWin;
+    }
   };
 
   // Intercept click hijacking via dynamic link clicks (capturing phase)
@@ -64,8 +100,17 @@
     const link = (e.target as HTMLElement)?.closest?.("a");
     if (link) {
       const href = link.href || "";
+      // Block standard ad URLs
       if (isAdUrl(href)) {
         console.warn("[AdBlocker] Hook blocked click redirection to:", href);
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+      }
+
+      // Block programmatic (untrusted) clicks going to external origins
+      if (!e.isTrusted && isExternalAdUrl(href)) {
+        console.warn("[AdBlocker] Hook blocked untrusted programmatic click redirection to:", href);
         e.preventDefault();
         e.stopPropagation();
         return false;

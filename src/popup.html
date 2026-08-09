@@ -16,6 +16,11 @@
       <span class="version">v1.0.0</span>
     </header>
 
+    <div id="ai-category-badge" style="display: none; align-items: center; gap: 6px; font-size: 11px; color: var(--text-secondary); background: var(--bg-secondary); padding: 6px 12px; border-radius: 8px; border: 1px solid var(--border-color); margin-bottom: 2px;">
+      <span>🎨 AI Category:</span>
+      <strong id="ai-category-text" style="color: var(--accent-color); font-weight: 700;">General Site</strong>
+    </div>
+
     <div class="tab-content active" id="tab-adblocker">
       <div class="settings-card">
         <div class="setting-row">
@@ -39,6 +44,19 @@
           <div class="empty-state" id="empty-ads-state">
             <span>✨</span>
             <p>No ads detected on this tab yet</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="detected-ads-section" style="margin-top: 16px; border-top: 1px solid var(--border-color); padding-top: 16px;">
+        <div class="section-header">
+          <h3>Blocked Ads History</h3>
+          <button id="clear-history-btn" style="background: none; border: none; color: var(--danger-color); font-size: 11px; cursor: pointer; padding: 2px 6px;">Clear History</button>
+        </div>
+        <div class="ad-list" id="history-list" style="max-height: 180px;">
+          <div class="empty-state" id="empty-history-state">
+            <span>📜</span>
+            <p>No history recorded yet</p>
           </div>
         </div>
       </div>

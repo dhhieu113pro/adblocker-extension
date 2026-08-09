@@ -193,7 +193,8 @@ class AdBlockerOverlay {
       "vsbet", "colatv", "8svui", "i9.top", "betting", "casino", "nhacai",
       "hoahong", "promotions", "affiliate", "sponsor", "game", "worldcup",
       "eclick", "smartads", "adtima", "static.znews.vn/banner", "adsbyeclick",
-      "promo", "quangcao", "qc", "adcenter", "ad-center", "advert", "popup"
+      "promo", "quangcao", "qc", "adcenter", "ad-center", "advert", "popup",
+      "populartooth", "admicro", "adnzone", "admzone"
     ];
     if (adKeywords.some((kw) => url.includes(kw))) return true;
 
@@ -331,7 +332,12 @@ class AdBlockerOverlay {
     };
 
     this.detectedAdsMap.set(adId, adInfo);
-    chrome.runtime.sendMessage({ type: "adBlocked" });
+    chrome.runtime.sendMessage({
+      type: "adBlocked",
+      adUrl: src,
+      adDomain: domain || "iframe ad",
+      pageUrl: window.location.href
+    });
   }
 
   scanImages() {
@@ -416,7 +422,7 @@ class AdBlockerOverlay {
   getAdTargetContainer(img) {
     let curr = img;
 
-    // Check if the image is inside a fixed/absolute screen-blocking popup overlay
+    // 1. Check if the image is inside a fixed/absolute screen-blocking popup overlay
     for (let i = 0; i < 8 && curr && curr.parentElement && curr.parentElement !== document.body; i++) {
       const parent = curr.parentElement;
       const cls = (parent.className || "").toString().toLowerCase();
@@ -434,7 +440,33 @@ class AdBlockerOverlay {
       curr = parent;
     }
 
-    // For standard page ads, return the img element itself to be extremely safe
+    // 2. Search for ad-specific wrappers in the parent chain to hide the entire ad slot
+    curr = img;
+    for (let i = 0; i < 6 && curr && curr.parentElement && curr.parentElement !== document.body; i++) {
+      const parent = curr.parentElement;
+      const id = (parent.id || "").toLowerCase();
+      const cls = (parent.className || "").toLowerCase();
+      
+      if (
+        id.includes("placement-") || 
+        id.includes("banner-") || 
+        id.includes("zone-") ||
+        id.includes("adnzone") ||
+        id.includes("admzone") ||
+        cls.includes("banner-ads") ||
+        cls.includes("eclick_ad_holder") ||
+        cls.includes("ad-item")
+      ) {
+        return parent;
+      }
+      curr = parent;
+    }
+
+    // 3. Fallback: Hide the containing anchor link wrapper if applicable
+    if (img.parentElement && img.parentElement.tagName === "A") {
+      return img.parentElement;
+    }
+
     return img;
   }
 
@@ -447,7 +479,8 @@ class AdBlockerOverlay {
       [class*="banner-ads"], [class*="section-ads"], [class*="banner-top"],
       .custom-ad-eclick, .eclick_ad_holder, [id*="eclick"], [class*="eclick"],
       ins.adsbyeclick, #boxTinTaiTro, .wrapper-sticky, .item-ads-v25, .item-ads-v16,
-      .slide-shopping-ads-viewport, .box-shopping-ads
+      .slide-shopping-ads-viewport, .box-shopping-ads,
+      [id*="adnzone"], [id*="admzone"], [id*="placement-"], [class*="admLogo"], .txtlogo
     `;
     const containers = Array.from(document.querySelectorAll(selector));
 
@@ -511,7 +544,12 @@ class AdBlockerOverlay {
     };
 
     this.detectedAdsMap.set(adId, adInfo);
-    chrome.runtime.sendMessage({ type: "adBlocked" });
+    chrome.runtime.sendMessage({
+      type: "adBlocked",
+      adUrl: url,
+      adDomain: domain,
+      pageUrl: window.location.href
+    });
   }
 
   async analyzeImage(img) {

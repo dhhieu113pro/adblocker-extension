@@ -8,7 +8,9 @@
     "scripting",
     "offscreen",
     "storage",
-    "contextMenus"
+    "contextMenus",
+    "webNavigation",
+    "tabs"
   ],
   "host_permissions": [
     "<all_urls>"

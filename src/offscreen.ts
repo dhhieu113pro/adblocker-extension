@@ -49,5 +49,28 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === "clipClassifyWebsite") {
+    (async () => {
+      try {
+        const classifier = await getClipClassifier();
+        const candidate_labels = [
+          "a movie streaming website with a video player",
+          "a manga or comic book reader page with images",
+          "a news website article with headers",
+          "a clean programming code repository",
+          "an e-commerce shopping catalog",
+          "a search engine homepage"
+        ];
+
+        const output = await classifier(message.imageDataUrl, candidate_labels);
+        sendResponse({ success: true, results: output });
+      } catch (err: any) {
+        console.error("[Offscreen CLIP Website]", err);
+        sendResponse({ error: err?.message || String(err) });
+      }
+    })();
+    return true;
+  }
+
   return false;
 });

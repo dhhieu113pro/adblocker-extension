@@ -15,6 +15,7 @@ class AdBlockerOverlay {
     this.setupMutationObserver();
     this.initMessageListener();
     this.setupContextMenuTracker();
+    this.setupVideoAdSkipper();
   }
 
   setupContextMenuTracker() {
@@ -708,6 +709,176 @@ class AdBlockerOverlay {
         }
         modal.remove();
       };
+    }
+  }
+
+  setupVideoAdSkipper() {
+    setInterval(() => {
+      this.scanVideoAds();
+    }, 500);
+  }
+
+  scanVideoAds() {
+    const videos = Array.from(document.querySelectorAll("video"));
+    if (videos.length === 0) return;
+
+    const isElementVisible = (el) => {
+      const rect = el.getBoundingClientRect();
+      const style = window.getComputedStyle(el);
+      return (
+        rect.width > 0 &&
+        rect.height > 0 &&
+        style.display !== "none" &&
+        style.visibility !== "hidden" &&
+        style.opacity !== "0"
+      );
+    };
+
+    // Find any skip ad button on the page
+    const buttons = Array.from(document.querySelectorAll("button, div, span, a"));
+    
+    const isSkipButton = (el) => {
+      if (el.children.length > 3) return false;
+      if (!isElementVisible(el)) return false;
+      
+      const text = (el.innerText || el.textContent || "").trim().toLowerCase();
+      const cls = (el.className || "").toString().toLowerCase();
+      const id = (el.id || "").toString().toLowerCase();
+      const aria = (el.getAttribute("aria-label") || "").toLowerCase();
+
+      const isMatchText = 
+        text === "bỏ qua" || 
+        text === "skip" || 
+        text.includes("bỏ qua quảng cáo") || 
+        text.includes("bỏ qua qc") || 
+        text.includes("skip ad") || 
+        text.includes("skip_ad") || 
+        text.includes("skip ad button") ||
+        aria.includes("bỏ qua") ||
+        aria.includes("skip");
+
+      const isMatchClass = 
+        cls.includes("skip-ad") || 
+        cls.includes("ad-skip") || 
+        cls.includes("skip-button") || 
+        cls.includes("skipqc") || 
+        cls.includes("btn-skip") || 
+        cls.includes("jw-skip") ||
+        cls.includes("vjs-skip") ||
+        id.includes("skip-ad") || 
+        id.includes("ad-skip") || 
+        id.includes("skip-button");
+
+      return isMatchText || isMatchClass;
+    };
+
+    const skipBtn = buttons.find(isSkipButton);
+
+    if (skipBtn) {
+      // Find the playing video element
+      const activeVideo = videos.find(v => !v.paused) || videos[0];
+      
+      if (activeVideo) {
+        // 1. Mute the video
+        if (!activeVideo.muted) {
+          activeVideo.muted = true;
+          activeVideo.dataset.webllmAutoMuted = "true";
+        }
+
+        // 2. Show black cover overlay
+        this.showVideoAdCover(activeVideo);
+
+        // 3. Auto-click if skip is ready (no countdown digits)
+        const btnText = (skipBtn.innerText || skipBtn.textContent || "").trim();
+        const hasCountdown = /\d+\s*(s|giây| giây)/i.test(btnText) || 
+                            (skipBtn.disabled) || 
+                            (skipBtn.getAttribute("disabled") !== null) ||
+                            (skipBtn.className || "").toString().toLowerCase().includes("disabled");
+
+        if (!hasCountdown) {
+          console.log("[AdBlocker] Clickable skip button found! Auto-skipping video ad.");
+          skipBtn.click();
+          
+          try {
+            skipBtn.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+          } catch (e) {}
+
+          // Remove cover and unmute immediately
+          this.removeVideoAdCover(activeVideo);
+          if (activeVideo.dataset.webllmAutoMuted === "true") {
+            activeVideo.muted = false;
+            delete activeVideo.dataset.webllmAutoMuted;
+          }
+        }
+      }
+    } else {
+      // No skip ad button present on page, clean up covers and unmute if we auto-muted
+      videos.forEach(video => {
+        this.removeVideoAdCover(video);
+        if (video.dataset.webllmAutoMuted === "true") {
+          video.muted = false;
+          delete video.dataset.webllmAutoMuted;
+        }
+      });
+    }
+  }
+
+  showVideoAdCover(videoEl) {
+    const parent = videoEl.parentElement;
+    if (!parent) return;
+
+    if (parent.querySelector("#webllm-video-ad-cover")) return;
+
+    const cover = document.createElement("div");
+    cover.id = "webllm-video-ad-cover";
+    Object.assign(cover.style, {
+      position: "absolute",
+      top: "0",
+      left: "0",
+      width: "100%",
+      height: "100%",
+      backgroundColor: "#000000",
+      zIndex: "2147483645",
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      justifyContent: "center",
+      color: "#ffffff",
+      fontFamily: "system-ui, -apple-system, sans-serif",
+      fontSize: "16px",
+      fontWeight: "bold",
+      pointerEvents: "none",
+    });
+
+    cover.innerHTML = `
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center; padding: 20px;">
+        <svg style="width: 48px; height: 48px; fill: #ef4444; animation: webllm-pulse 1.5s infinite;" viewBox="0 0 24 24">
+          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
+        </svg>
+        <span style="font-size: 15px; color: #f8fafc;">🛡️ AI Vision Ad Blocker</span>
+        <span style="font-size: 12px; font-weight: normal; color: #94a3b8;">Muting and skipping video advertisement...</span>
+      </div>
+      <style>
+        @keyframes webllm-pulse {
+          0% { transform: scale(1); opacity: 1; }
+          50% { transform: scale(1.1); opacity: 0.7; }
+          100% { transform: scale(1); opacity: 1; }
+        }
+      </style>
+    `;
+
+    const parentStyle = window.getComputedStyle(parent);
+    if (parentStyle.position === "static") {
+      parent.style.position = "relative";
+    }
+    parent.appendChild(cover);
+  }
+
+  removeVideoAdCover(videoEl) {
+    const parent = videoEl.parentElement;
+    if (parent) {
+      const cover = parent.querySelector("#webllm-video-ad-cover");
+      if (cover) cover.remove();
     }
   }
 }

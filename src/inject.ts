@@ -97,7 +97,50 @@
 
   // Intercept click hijacking via dynamic link clicks (capturing phase)
   window.addEventListener("click", (e: MouseEvent) => {
-    const link = (e.target as HTMLElement)?.closest?.("a");
+    const target = e.target as HTMLElement;
+    if (!target) return;
+
+    // Check if the clicked element (or its near parents) is a transparent clickjacking overlay
+    let curr: HTMLElement | null = target;
+    for (let i = 0; i < 3 && curr && curr !== document.body; i++) {
+      try {
+        const style = window.getComputedStyle(curr);
+        const isPositioned = style.position === "fixed" || style.position === "absolute";
+        const zIndex = parseInt(style.zIndex, 10);
+        
+        const rect = curr.getBoundingClientRect();
+        const viewWidth = window.innerWidth;
+        const viewHeight = window.innerHeight;
+        const coversScreen = rect.width >= viewWidth * 0.8 && rect.height >= viewHeight * 0.8;
+        
+        const isBgTransparent = 
+          style.backgroundColor === "transparent" || 
+          style.backgroundColor.includes("rgba(0, 0, 0, 0)") || 
+          style.backgroundColor.includes("rgba(255, 255, 255, 0)") ||
+          style.backgroundColor === "initial" ||
+          style.backgroundColor === "";
+        const isOpacityZero = parseFloat(style.opacity || "1") < 0.1;
+        const isTransparent = isBgTransparent || isOpacityZero;
+
+        const text = (curr.innerText || curr.textContent || "").trim();
+        const hasNoContent = text.length < 30;
+
+        if (isPositioned && !isNaN(zIndex) && zIndex >= 999 && coversScreen && isTransparent && hasNoContent) {
+          console.warn("[AdBlocker] Capturing click blocked on clickjacking overlay:", curr);
+          e.preventDefault();
+          e.stopPropagation();
+          
+          try {
+            curr.remove();
+          } catch {}
+          
+          return false;
+        }
+      } catch (err) {}
+      curr = curr.parentElement;
+    }
+
+    const link = target.closest("a");
     if (link) {
       const href = link.href || "";
       // Block standard ad URLs

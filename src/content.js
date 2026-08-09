@@ -143,7 +143,11 @@ class AdBlockerOverlay {
 
   setupMutationObserver() {
     const observer = new MutationObserver((mutations) => {
+      let hasNewNodes = false;
       for (const m of mutations) {
+        if (m.type === "childList" && m.addedNodes.length > 0) {
+          hasNewNodes = true;
+        }
         if (m.type === "attributes" && m.attributeName === "style" && m.target) {
           const target = m.target;
           if (target.dataset?.webllmAdHidden === "true") {
@@ -152,6 +156,9 @@ class AdBlockerOverlay {
             }
           }
         }
+      }
+      if (hasNewNodes) {
+        this.scanClickjackingOverlays();
       }
       this.scanImages();
     });

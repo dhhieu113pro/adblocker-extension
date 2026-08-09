@@ -1,3 +1,16 @@
+const tabBlockedCounts = new Map<number, number>();
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  if (changeInfo.status === "loading") {
+    tabBlockedCounts.set(tabId, 0);
+    chrome.action.setBadgeText({ tabId, text: "" });
+  }
+});
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  tabBlockedCounts.delete(tabId);
+});
+
 chrome.runtime.onInstalled.addListener(() => {
   console.log("AI Vision Ad Blocker extension installed");
   chrome.contextMenus.create({
@@ -16,7 +29,20 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   }
 });
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === "adBlocked") {
+    const tabId = sender.tab?.id;
+    if (tabId !== undefined) {
+      const currentCount = tabBlockedCounts.get(tabId) || 0;
+      const newCount = currentCount + 1;
+      tabBlockedCounts.set(tabId, newCount);
+      chrome.action.setBadgeText({ tabId, text: newCount.toString() });
+      chrome.action.setBadgeBackgroundColor({ tabId, color: "#ef4444" });
+    }
+    sendResponse({ success: true });
+    return true;
+  }
+
   if (message.type === "fetchImageAsBase64") {
     (async () => {
       try {

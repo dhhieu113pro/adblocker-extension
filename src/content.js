@@ -323,6 +323,7 @@ class AdBlockerOverlay {
     };
 
     this.detectedAdsMap.set(adId, adInfo);
+    chrome.runtime.sendMessage({ type: "adBlocked" });
   }
 
   scanImages() {
@@ -502,6 +503,7 @@ class AdBlockerOverlay {
     };
 
     this.detectedAdsMap.set(adId, adInfo);
+    chrome.runtime.sendMessage({ type: "adBlocked" });
   }
 
   async analyzeImage(img) {

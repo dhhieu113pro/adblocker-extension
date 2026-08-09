@@ -715,6 +715,7 @@ class AdBlockerOverlay {
   setupVideoAdSkipper() {
     setInterval(() => {
       this.scanVideoAds();
+      this.scanClickjackingOverlays();
     }, 500);
   }
 
@@ -880,6 +881,60 @@ class AdBlockerOverlay {
       const cover = parent.querySelector("#webllm-video-ad-cover");
       if (cover) cover.remove();
     }
+  }
+
+  scanClickjackingOverlays() {
+    const divs = Array.from(document.querySelectorAll("div, a, iframe, ins"));
+    const viewWidth = window.innerWidth;
+    const viewHeight = window.innerHeight;
+
+    divs.forEach((el) => {
+      if (el.dataset.webllmClickjacker === "processed") return;
+
+      const style = window.getComputedStyle(el);
+      
+      const isPositioned = style.position === "fixed" || style.position === "absolute";
+      if (!isPositioned) return;
+
+      const zIndex = parseInt(style.zIndex, 10);
+      if (isNaN(zIndex) || zIndex < 999) return;
+
+      const rect = el.getBoundingClientRect();
+      const coversWidth = rect.width >= viewWidth * 0.85;
+      const coversHeight = rect.height >= viewHeight * 0.85;
+      if (!coversWidth || !coversHeight) return;
+
+      const isBgTransparent = 
+        style.backgroundColor === "transparent" || 
+        style.backgroundColor.includes("rgba(0, 0, 0, 0)") || 
+        style.backgroundColor.includes("rgba(255, 255, 255, 0)") ||
+        style.backgroundColor === "initial" ||
+        style.backgroundColor === "";
+        
+      const isOpacityZero = parseFloat(style.opacity || "1") < 0.1;
+      const isTransparent = isBgTransparent || isOpacityZero;
+      if (!isTransparent) return;
+
+      if (style.pointerEvents === "none") return;
+
+      const text = (el.innerText || el.textContent || "").trim();
+      if (text.length > 30) return;
+
+      const interactiveChildren = el.querySelectorAll("input, button, select, textarea, form, a[href]");
+      if (interactiveChildren.length > 2) return;
+
+      console.warn("[AdBlocker] Detected transparent clickjacking overlay:", el);
+      el.dataset.webllmClickjacker = "processed";
+      
+      el.style.setProperty("pointer-events", "none", "important");
+      
+      try {
+        el.remove();
+        console.log("[AdBlocker] Removed clickjacking overlay from DOM.");
+      } catch (e) {
+        el.style.setProperty("display", "none", "important");
+      }
+    });
   }
 }
 

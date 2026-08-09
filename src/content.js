@@ -163,8 +163,8 @@ class AdBlockerOverlay {
   }
 
   isAdBannerCandidate(img) {
-    const width = img.width || img.naturalWidth || 0;
-    const height = img.height || img.naturalHeight || 0;
+    const width = img.naturalWidth || img.width || 0;
+    const height = img.naturalHeight || img.height || 0;
     const url = (img.currentSrc || img.src || "").toLowerCase();
 
     if (width > 0 && height > 0) {
@@ -184,9 +184,17 @@ class AdBlockerOverlay {
       "storage/images/other", "api.mamphim", "banner", "ads", "adserver",
       "vsbet", "colatv", "8svui", "i9.top", "betting", "casino", "nhacai",
       "hoahong", "promotions", "affiliate", "sponsor", "game", "worldcup",
-      "eclick", "smartads", "adtima", "static.znews.vn/banner", "adsbyeclick"
+      "eclick", "smartads", "adtima", "static.znews.vn/banner", "adsbyeclick",
+      "promo", "quangcao", "qc", "adcenter", "ad-center", "advert", "popup"
     ];
     if (adKeywords.some((kw) => url.includes(kw))) return true;
+
+    // Check if wrapped in a sponsored/nofollow link
+    const link = img.closest("a");
+    if (link) {
+      const rel = (link.getAttribute("rel") || "").toLowerCase();
+      if (rel.includes("sponsored") || rel.includes("nofollow")) return true;
+    }
 
     return false;
   }
@@ -328,8 +336,8 @@ class AdBlockerOverlay {
 
         this.processedImages.add(img);
 
-        const width = img.width || img.naturalWidth;
-        const height = img.height || img.naturalHeight;
+        const width = img.naturalWidth || img.width;
+        const height = img.naturalHeight || img.height;
 
         if (this.autoHideAds) {
           const imgSrc = img.currentSrc || img.src;
@@ -346,10 +354,19 @@ class AdBlockerOverlay {
           let currEl = img;
           for (let i = 0; i < 4 && currEl && currEl.parentElement; i++) {
             const parent = currEl.parentElement;
-            const closeBtn = parent.querySelector(".close-it, .close-ad, .close_not_qc, [class*='close-ad'], [class*='ad-close'], .no-ads-under");
+            const closeBtn = parent.querySelector(
+              "button, [role='button'], .close-it, .close-ad, .close_not_qc, " +
+              "[class*='close-ad'], [class*='ad-close'], .no-ads-under, " +
+              "[aria-label*='quảng cáo'], [aria-label*='Đóng']"
+            );
             if (closeBtn) {
               const btnText = (closeBtn.innerText || closeBtn.textContent || "").toLowerCase();
-              if (btnText.includes("qc") || btnText.includes("quảng cáo") || btnText.includes("close") || btnText.includes("đóng") || closeBtn.classList.contains("no-ads-under")) {
+              const ariaLabel = (closeBtn.getAttribute("aria-label") || "").toLowerCase();
+              if (
+                btnText.includes("qc") || btnText.includes("quảng cáo") || btnText.includes("close") || btnText.includes("đóng") ||
+                ariaLabel.includes("qc") || ariaLabel.includes("quảng cáo") || ariaLabel.includes("close") || ariaLabel.includes("đóng") ||
+                closeBtn.classList.contains("no-ads-under")
+              ) {
                 hasCloseAdButton = true;
                 break;
               }
@@ -490,8 +507,40 @@ class AdBlockerOverlay {
   async analyzeImage(img) {
     try {
       const imgSrc = img.currentSrc || img.src;
-      const width = img.width || img.naturalWidth || 300;
-      const height = img.height || img.naturalHeight || 250;
+      const width = img.naturalWidth || img.width || 300;
+      const height = img.naturalHeight || img.height || 250;
+
+      let linkUrl = "";
+      let linkRel = "";
+      const link = img.closest("a");
+      if (link) {
+        linkUrl = link.href || "";
+        linkRel = link.getAttribute("rel") || "";
+      }
+
+      let hasCloseAdButton = false;
+      let currEl = img;
+      for (let i = 0; i < 4 && currEl && currEl.parentElement; i++) {
+        const parent = currEl.parentElement;
+        const closeBtn = parent.querySelector(
+          "button, [role='button'], .close-it, .close-ad, .close_not_qc, " +
+          "[class*='close-ad'], [class*='ad-close'], .no-ads-under, " +
+          "[aria-label*='quảng cáo'], [aria-label*='Đóng']"
+        );
+        if (closeBtn) {
+          const btnText = (closeBtn.innerText || closeBtn.textContent || "").toLowerCase();
+          const ariaLabel = (closeBtn.getAttribute("aria-label") || "").toLowerCase();
+          if (
+            btnText.includes("qc") || btnText.includes("quảng cáo") || btnText.includes("close") || btnText.includes("đóng") ||
+            ariaLabel.includes("qc") || ariaLabel.includes("quảng cáo") || ariaLabel.includes("close") || ariaLabel.includes("đóng") ||
+            closeBtn.classList.contains("no-ads-under")
+          ) {
+            hasCloseAdButton = true;
+            break;
+          }
+        }
+        currEl = parent;
+      }
 
       let imageDataUrl = "";
       try {
@@ -515,6 +564,9 @@ class AdBlockerOverlay {
           imageDataUrl,
           width,
           height,
+          linkUrl,
+          linkRel,
+          hasCloseAdButton,
           forceAI: true,
         },
         (res) => {

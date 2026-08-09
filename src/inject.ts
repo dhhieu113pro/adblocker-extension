@@ -19,12 +19,42 @@
     return false;
   };
 
+  const isExternalAdUrl = (url: any): boolean => {
+    if (!url) return false;
+    try {
+      const targetUrl = new URL(url.toString(), window.location.href);
+      const targetHost = targetUrl.hostname.toLowerCase();
+      const currentHost = window.location.hostname.toLowerCase();
+      
+      // Ignore relative paths or local origins
+      if (!targetHost || targetHost === currentHost || targetHost.endsWith("." + currentHost)) {
+        return false;
+      }
+      
+      // Whitelist of common auth and legitimate sharing platforms
+      const whitelist = [
+        "google.com", "facebook.com", "github.com", "twitter.com", 
+        "apple.com", "microsoft.com", "youtube.com", "vimeo.com", 
+        "imdb.com", "wikipedia.org"
+      ];
+      if (whitelist.some(domain => targetHost === domain || targetHost.endsWith("." + domain))) {
+        return false;
+      }
+
+      return true; // External origin popup is blocked!
+    } catch {
+      return false; // Fallback on parse errors (safely allow)
+    }
+  };
+
   // Hook window.open
   const originalOpen = window.open;
   (window as any).open = function(url?: string | URL, target?: string, features?: string) {
-    if (url && isAdUrl(url)) {
-      console.warn("[AdBlocker] Hook blocked window.open popup redirect to:", url);
-      return null;
+    if (url) {
+      if (isAdUrl(url) || isExternalAdUrl(url)) {
+        console.warn("[AdBlocker] Hook blocked window.open popup redirect to:", url);
+        return null;
+      }
     }
     return originalOpen.apply(this, arguments as any);
   };

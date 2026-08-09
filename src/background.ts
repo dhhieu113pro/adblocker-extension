@@ -37,7 +37,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === "detectAd") {
     (async () => {
       try {
-        const heuristics = analyzeAdHeuristics(message.imageUrl, message.width, message.height);
+        const heuristics = analyzeAdHeuristics(
+          message.imageUrl, 
+          message.width, 
+          message.height,
+          message.linkUrl,
+          message.linkRel,
+          message.hasCloseAdButton
+        );
 
         if (heuristics.confidence >= 60 && !message.forceAI) {
           sendResponse({
@@ -110,7 +117,14 @@ async function ensureOffscreenDocument() {
   }
 }
 
-function analyzeAdHeuristics(imgUrl: string, width?: number, height?: number) {
+function analyzeAdHeuristics(
+  imgUrl: string,
+  width?: number,
+  height?: number,
+  linkUrl?: string,
+  linkRel?: string,
+  hasCloseAdButton?: boolean
+) {
   const reasons: string[] = [];
   let score = 0;
 
@@ -139,12 +153,14 @@ function analyzeAdHeuristics(imgUrl: string, width?: number, height?: number) {
 
   const lowerUrl = (imgUrl || "").toLowerCase();
 
+  // Add adcenter to keywords
   const adKeywords = [
     "storage/images/other", "api.mamphim", "banner", "ads", "adserver",
     "vsbet", "colatv", "8svui", "i9.top", "betting", "casino", "nhacai",
     "hoahong", "promotions", "affiliate", "sponsor", "game", "worldcup",
     "eclick", "smartads", "adtima", "shopping", "video_sma", "vma-poster",
-    "adsbyeclick", "t.eclick.vn", "static.eclick.vn", "s.eclick.vn"
+    "adsbyeclick", "t.eclick.vn", "static.eclick.vn", "s.eclick.vn",
+    "adcenter"
   ];
   const matchedKeywords = adKeywords.filter((kw) => lowerUrl.includes(kw));
   if (matchedKeywords.length > 0) {
@@ -155,6 +171,25 @@ function analyzeAdHeuristics(imgUrl: string, width?: number, height?: number) {
   if (lowerUrl.endsWith(".gif") && (lowerUrl.includes("storage") || lowerUrl.includes("other") || lowerUrl.includes("api"))) {
     score += 20;
     reasons.push("Animated GIF banner on asset server");
+  }
+
+  if (linkRel && linkRel.toLowerCase().includes("sponsored")) {
+    score += 60;
+    reasons.push("Image wrapped in a 'sponsored' link");
+  }
+
+  if (linkUrl) {
+    const lowerLink = linkUrl.toLowerCase();
+    // Raw IP address link check (common for ad networks)
+    if (/https?:\/\/\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/.test(lowerLink)) {
+      score += 45;
+      reasons.push("Link redirects to a raw IP address");
+    }
+  }
+
+  if (hasCloseAdButton) {
+    score += 50;
+    reasons.push("Parent container has close-ad controls");
   }
 
   const confidence = Math.min(Math.round(score), 99);

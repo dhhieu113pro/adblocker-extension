@@ -333,12 +333,39 @@ class AdBlockerOverlay {
 
         if (this.autoHideAds) {
           const imgSrc = img.currentSrc || img.src;
+
+          let linkUrl = "";
+          let linkRel = "";
+          const link = img.closest("a");
+          if (link) {
+            linkUrl = link.href || "";
+            linkRel = link.getAttribute("rel") || "";
+          }
+
+          let hasCloseAdButton = false;
+          let currEl = img;
+          for (let i = 0; i < 4 && currEl && currEl.parentElement; i++) {
+            const parent = currEl.parentElement;
+            const closeBtn = parent.querySelector(".close-it, .close-ad, .close_not_qc, [class*='close-ad'], [class*='ad-close'], .no-ads-under");
+            if (closeBtn) {
+              const btnText = (closeBtn.innerText || closeBtn.textContent || "").toLowerCase();
+              if (btnText.includes("qc") || btnText.includes("quảng cáo") || btnText.includes("close") || btnText.includes("đóng") || closeBtn.classList.contains("no-ads-under")) {
+                hasCloseAdButton = true;
+                break;
+              }
+            }
+            currEl = parent;
+          }
+
           chrome.runtime.sendMessage(
             {
               type: "detectAd",
               imageUrl: imgSrc,
               width,
               height,
+              linkUrl,
+              linkRel,
+              hasCloseAdButton,
             },
             (res) => {
               if (res?.isAd && res.confidence >= 50) {
@@ -362,76 +389,27 @@ class AdBlockerOverlay {
 
   getAdTargetContainer(img) {
     let curr = img;
-    let bestContainer = img;
 
-    const matchesAdWord = (str) => {
-      if (!str) return false;
-      return /\b(ads?|banner|sponsor(ed)?)\b/i.test(str) ||
-             /(^|[-_])(ads?|banner|sponsor(ed)?)([-_]|$)/i.test(str);
-    };
-
+    // Check if the image is inside a fixed/absolute screen-blocking popup overlay
     for (let i = 0; i < 8 && curr && curr.parentElement && curr.parentElement !== document.body; i++) {
       const parent = curr.parentElement;
-      const tag = parent.tagName.toLowerCase();
       const cls = (parent.className || "").toString().toLowerCase();
-      const id = (parent.id || "").toString().toLowerCase();
-
+      const style = window.getComputedStyle(parent);
       if (
-        cls.includes("wrapper-sticky") ||
-        cls.includes("item-ads-v25") ||
-        cls.includes("item-ads-v16") ||
-        cls.includes("slide-shopping-ads") ||
-        cls.includes("icon-sma") ||
-        cls.includes("ads-tag") ||
-        cls.includes("eclick") ||
-        cls.includes("smartads") ||
-        cls.includes("custom-ad") ||
-        cls.includes("ad_frame_protection") ||
-        cls.includes("item-ads") ||
-        cls.includes("section-ads") ||
-        cls.includes("banner-ads") ||
-        cls.includes("banner-top") ||
-        cls.includes("masthead") ||
-        cls.includes("znews-banner") ||
-        cls.includes("adscatfish") ||
-        cls.includes("sspp-area") ||
-        cls.includes("catfish") ||
-        cls.includes("is-catfish") ||
-        cls.includes("ad-area") ||
-        cls.includes("ad-wrapper") ||
-        cls.includes("ad-container") ||
-        cls.includes("banner-wrapper") ||
-        cls.includes("banner-container") ||
-        id.includes("eclick") ||
-        id.includes("smartads") ||
-        id.includes("masthead") ||
-        id.includes("supper_") ||
-        id.includes("zingnews_") ||
-        id.includes("ad-area") ||
-        id.includes("banner-area")
+        cls.includes("fixed") ||
+        cls.includes("modal") ||
+        cls.includes("popup") ||
+        cls.includes("overlay") ||
+        style.position === "fixed" ||
+        (style.position === "absolute" && parseInt(style.zIndex, 10) >= 999)
       ) {
         return parent;
       }
-
-      if (parent.querySelector(".close-it, .close-ad, .close_not_qc, [class*='close-ad'], [class*='ad-close'], [class*='close-it']")) {
-        return parent;
-      }
-
-      if (
-        tag === "a" ||
-        tag === "section" ||
-        tag === "figure" ||
-        tag === "picture" ||
-        matchesAdWord(cls) ||
-        matchesAdWord(id)
-      ) {
-        bestContainer = parent;
-      }
-
       curr = parent;
     }
 
-    return bestContainer;
+    // For standard page ads, return the img element itself to be extremely safe
+    return img;
   }
 
   cleanupEmptyAdContainers() {
@@ -465,8 +443,7 @@ class AdBlockerOverlay {
   }
 
   hideAd(img, res) {
-    // Target the img directly to avoid hiding outer page layouts/navigation menus safely
-    const targetElement = img;
+    const targetElement = this.getAdTargetContainer(img);
     if (targetElement.dataset.webllmAdHidden === "true") return;
 
     const originalDisplay = targetElement.style.display || "";
@@ -602,7 +579,7 @@ class AdBlockerOverlay {
     let targetElement = null;
     let isHidden = false;
     if (img && img.tagName) {
-      targetElement = img;
+      targetElement = this.getAdTargetContainer(img);
       isHidden = targetElement.dataset.webllmAdHidden === "true" || targetElement.style.display === "none";
     }
 

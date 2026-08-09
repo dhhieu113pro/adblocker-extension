@@ -328,19 +328,102 @@ function isStreamingOrAdProneSite(urlStr: string, tabId?: number): boolean {
   }
 }
 
-function isAdPattern(urlStr: string): boolean {
-  const urlLower = urlStr.toLowerCase();
-  const adKeywords = [
-    "rg.pro.vn", "bboocclink", "154.82.109.", "adcenter", "vsbet", 
-    "colatv", "8svui", "i9.top", "betting", "casino", "nhacai",
-    "affiliate", "promos", "redirect", "sponsored", "adserver",
-    "advert", "popup", "clickunder", "popunder", "shortlink", "workers.dev",
-    "tracking", "tracker", "click?", "/click", "prmtracking",
-    "popads", "popcash", "adsterra", "exoclick", "juicyads", "propellerads",
-    "doubleclick", "googleads", "taboola", "outbrain", "/ads/", "ad_id", "click_id", "aff_id"
-  ];
-  return adKeywords.some(kw => urlLower.includes(kw)) || 
-         /https?:\/\/\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/.test(urlLower);
+// ---------- Known ad / redirect domains ----------
+const adDomains = new Set([
+  "doubleclick.net", "googlesyndication.com", "googleadservices.com",
+  "adsterra.com", "popads.net", "popcash.net", "exoclick.com",
+  "juicyads.com", "propellerads.com", "taboola.com", "outbrain.com",
+  "i9.top", "colatv.vn", "vsbet.com", "nhacai.com", "rg.pro.vn"
+]);
+
+// ---------- Domains to never flag (CDNs, infra, mainstream sites) ----------
+const trustedDomains = new Set([
+  "cloudfront.net", "amazonaws.com", "googleapis.com", "gstatic.com",
+  "cloudflare.com", "github.io", "vercel.app", "netlify.app",
+  "google.com", "youtube.com", "facebook.com", "wikipedia.org", "github.com"
+]);
+
+// ---------- Path / query signatures ----------
+const adPathPatterns = [
+  /\/ads?\//i, /\/adserver\//i, /\/popunder/i, /\/clickunder/i,
+  /\/sponsored\//i, /\/shortlink\//i, /\/redirect\//i, /\/promos?\//i
+];
+
+const adQueryParams = ["ad_id", "click_id", "aff_id", "prmtracking", "utm_source=ad"];
+
+// ---------- Entropy / randomness helpers ----------
+function calculateEntropy(str: string): number {
+  const freq: Record<string, number> = {};
+  for (const char of str) freq[char] = (freq[char] || 0) + 1;
+  let entropy = 0;
+  const len = str.length;
+  for (const char in freq) {
+    const p = freq[char] / len;
+    entropy -= p * Math.log2(p);
+  }
+  return entropy;
+}
+
+function isHighEntropy(label: string): boolean {
+  if (label.length < 6) return false;
+  return calculateEntropy(label) > 3.2;
+}
+
+function looksRandom(label: string): boolean {
+  const vowels = (label.match(/[aeiou]/gi) || []).length;
+  const digits = (label.match(/[0-9]/g) || []).length;
+
+  if (label.length >= 6 && vowels === 0) return true;           // no vowels at all
+  if (/[bcdfghjklmnpqrstvwxyz]{5,}/i.test(label)) return true;  // consonant wall
+  if (digits > 0 && label.length <= 10 && digits / label.length > 0.25) return true; // digit-heavy
+
+  return false;
+}
+
+function isTrustedInfra(hostname: string): boolean {
+  return [...trustedDomains].some(d => hostname === d || hostname.endsWith("." + d));
+}
+
+function hasRandomLookingLabel(hostname: string): boolean {
+  if (isTrustedInfra(hostname)) return false;
+  const labels = hostname.split(".").filter(l => l.length > 0);
+  return labels.some(label => {
+    if (label.length < 5) return false;
+    return isHighEntropy(label) || looksRandom(label);
+  });
+}
+
+function isAdPattern(rawUrl: string): boolean {
+  if (!rawUrl) return false;
+
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    return false; // invalid URL, don't flag
+  }
+
+  const hostname = url.hostname.toLowerCase();
+
+  // Never flag trusted infra domains
+  if (isTrustedInfra(hostname)) return false;
+
+  // 1. Known ad domain (exact or subdomain match)
+  if ([...adDomains].some(d => hostname === d || hostname.endsWith("." + d))) return true;
+
+  // 2. Raw IP host
+  if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname)) return true;
+
+  // 3. Suspicious path
+  if (adPathPatterns.some(re => re.test(url.pathname.toLowerCase()))) return true;
+
+  // 4. Suspicious query params
+  if (adQueryParams.some(p => url.search.toLowerCase().includes(p))) return true;
+
+  // 5. Random-looking domain label (DGA-style generated domains)
+  if (hasRandomLookingLabel(hostname)) return true;
+
+  return false;
 }
 
 function logAdBlockedInHistory(adUrl: string, pageUrl: string) {
@@ -436,7 +519,7 @@ chrome.webNavigation.onBeforeNavigate.addListener((details) => {
   });
 });
 
-// 3. AI Visually Classify Website Category on Load Completed
+// 3. AI Visually Classify Website Category on Load Completed & Block Ad Popups
 chrome.webNavigation.onCompleted.addListener((details) => {
   if (details.frameId !== 0) return;
   
@@ -459,6 +542,46 @@ chrome.webNavigation.onCompleted.addListener((details) => {
 
         try {
           await ensureOffscreenDocument();
+
+          // A. If the tab has an openerTabId (it is a popup window), check if it is visually a gambling/betting/promotional ad page.
+          if (tab.openerTabId) {
+            const aiAdResult = await chrome.runtime.sendMessage({
+              type: "clipClassifyAdPage",
+              imageDataUrl: dataUrl,
+              target: "offscreen",
+            });
+
+            if (aiAdResult?.results && Array.isArray(aiAdResult.results)) {
+              const results = aiAdResult.results;
+              results.sort((a: any, b: any) => b.score - a.score);
+              const topMatch = results[0];
+              const confidence = Math.round(topMatch.score * 100);
+
+              const isAdPage = topMatch.label.includes("betting") || 
+                               topMatch.label.includes("casino") || 
+                               topMatch.label.includes("promotional");
+
+              if (isAdPage && topMatch.score >= 0.50) {
+                console.warn(`[AdBlocker] AI visually identified popup tab ${tabId} as an AD LANDER: "${topMatch.label}" (${confidence}% confidence). Closing tab.`);
+                
+                // Close the popup tab
+                chrome.tabs.remove(tabId);
+
+                // Update badge count of the parent tab
+                const parentTabId = tab.openerTabId;
+                const currentCount = tabBlockedCounts.get(parentTabId) || 0;
+                const newCount = currentCount + 1;
+                tabBlockedCounts.set(parentTabId, newCount);
+                chrome.action.setBadgeText({ tabId: parentTabId, text: newCount.toString() });
+                chrome.action.setBadgeBackgroundColor({ tabId: parentTabId, color: "#ef4444" });
+
+                logAdBlockedInHistory(url, "Popup Ad Page");
+                return; // Popup tab closed, terminate chain
+              }
+            }
+          }
+
+          // B. Classify category for general layout
           const aiResult = await chrome.runtime.sendMessage({
             type: "clipClassifyWebsite",
             imageDataUrl: dataUrl,

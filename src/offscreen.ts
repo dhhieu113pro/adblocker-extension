@@ -72,5 +72,25 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === "clipClassifyAdPage") {
+    (async () => {
+      try {
+        const classifier = await getClipClassifier();
+        const candidate_labels = [
+          "a sports betting or online casino gambling website",
+          "a promotional advertising spam or giveaway page",
+          "a clean regular website layout"
+        ];
+
+        const output = await classifier(message.imageDataUrl, candidate_labels);
+        sendResponse({ success: true, results: output });
+      } catch (err: any) {
+        console.error("[Offscreen CLIP Ad Page]", err);
+        sendResponse({ error: err?.message || String(err) });
+      }
+    })();
+    return true;
+  }
+
   return false;
 });

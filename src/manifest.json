@@ -22,6 +22,16 @@
         "<all_urls>"
       ],
       "js": [
+        "inject.ts"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
         "content.js"
       ],
       "run_at": "document_idle"

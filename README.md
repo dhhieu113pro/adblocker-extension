@@ -9,7 +9,10 @@ An intelligent, on-device Chrome Extension that blocks advertisements using a **
 *   **Hybrid Ad Detection Engine**:
     *   **Tier 1: Heuristics** (Instant evaluation based on IAB standard sizes, banner aspect ratios, and domain/URL rules).
     *   **Tier 2: local CLIP AI Vision** (OpenAI's Vision Transformer `CLIP-ViT-B/16` runs zero-shot classification in an offscreen WASM worker when heuristics are ambiguous).
+*   **Request-Level Blocking (declarativeNetRequest)**: Known ad domains are blocked at the network layer, not just hidden in the DOM—saves bandwidth and catches `window.open` popups before they fire.
 *   **On-Demand AI Detection (Context Menu)**: Right-click any image on the web and select **"✨ Analyze with AI & Detect Ad"** to review the classification reasons and confidence scores.
+*   **CLIP Result Cache**: AI classification results are cached per image URL (7-day TTL, LRU), so repeat scans cost nothing.
+*   **Burst-Scan Queue**: Image scans are queued and debounced to keep ad-heavy pages from overwhelming the tab or the AI runtime.
 *   **Safe Iframe Hiding**: Ad iframes (such as Google Ads, Admicro, DoubleClick, etc.) are hidden safely at the element level to avoid breaking parent layouts.
 *   **Clean Page Cleanup**: Auto-collapses empty container placeholders left behind by image banner ads.
 *   **100% Local & Privacy-First**: All AI inference runs locally in your browser's offscreen WebAssembly runtime—no visual data ever leaves your device.
@@ -27,26 +30,35 @@ sequenceDiagram
     participant Offscreen as offscreen.ts (WASM Context)
 
     Content->>Content: Page Load / scanImages()
+    Content->>Content: enqueueAdCheck(ad) (debounced burst-scan queue)
+    Note over Content: Serial drain, 200ms spacing, URL dedup
     Content->>Background: sendMessage("detectAd")
     Note over Background: Runs Heuristic Rules Engine first<br/>(IAB Dimensions & Domain keywords)
     
     alt Heuristic is certain (Confidence >= 60%)
         Background-->>Content: Block Ad (Fast path, skips AI)
     else Heuristic is ambiguous OR Forced AI detection (Right-Click)
-        Background->>Background: ensureOffscreenDocument()
-        Background->>Offscreen: sendMessage("clipClassifyAd")
-        
-        Note over Offscreen: Loads CLIP model & evaluates image<br/>against 4 candidate labels
-        Offscreen-->>Background: Classification results (scores)
-        
-        Note over Background: Checks if top AI label matches<br/>"advertisement" or "banner"
-        Background-->>Content: Block/Allow Decision
+        Background->>Background: CLIP cache lookup (per image URL)
+        alt Cache hit (within 7-day TTL)
+            Background-->>Content: Block/Allow from cached result
+        else Cache miss
+            Background->>Background: ensureOffscreenDocument()
+            Background->>Offscreen: sendMessage("clipClassifyAd")
+            
+            Note over Offscreen: Loads CLIP model & evaluates image<br/>against 4 candidate labels
+            Offscreen-->>Background: Classification results (scores)
+            
+            Note over Background: Checks if top AI label matches<br/>"advertisement" or "banner"
+            Background-->>Content: Block/Allow Decision
+        end
     end
     
     alt Decision is "Block Ad"
         Content->>Content: hideAd(img) [display: none]
     end
 ```
+
+> **Request-level blocking** is handled separately: `background.ts` installs dynamic `declarativeNetRequest` rules that block known ad domains at the network layer, so `window.open`-style popups never get a chance to render.
 
 ### 1. Zero-Shot Image Classification
 The extension uses Apple/OpenAI's **CLIP** model (`Xenova/clip-vit-base-patch16-224`) inside a Chrome Offscreen Document. It dynamically tests images against these candidate labels:

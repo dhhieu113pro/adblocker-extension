@@ -1,102 +1,9 @@
+import { isAdUrl as sharedIsAdUrl, isStreamingKeywordSite, isExternalAdUrl as sharedIsExternalAdUrl } from "./shared";
+
 (function() {
-  // ---------- Known ad / redirect domains ----------
-  const adDomains = new Set([
-    "doubleclick.net", "googlesyndication.com", "googleadservices.com",
-    "adsterra.com", "popads.net", "popcash.net", "exoclick.com",
-    "juicyads.com", "propellerads.com", "taboola.com", "outbrain.com",
-    "i9.top", "colatv.vn", "vsbet.com", "nhacai.com", "rg.pro.vn"
-  ]);
-
-  // ---------- Domains to never flag (CDNs, infra, mainstream sites) ----------
-  const trustedDomains = new Set([
-    "cloudfront.net", "amazonaws.com", "googleapis.com", "gstatic.com",
-    "cloudflare.com", "github.io", "vercel.app", "netlify.app",
-    "google.com", "youtube.com", "facebook.com", "wikipedia.org", "github.com"
-  ]);
-
-  // ---------- Path / query signatures ----------
-  const adPathPatterns = [
-    /\/ads?\//i, /\/adserver\//i, /\/popunder/i, /\/clickunder/i,
-    /\/sponsored\//i, /\/shortlink\//i, /\/redirect\//i, /\/promos?\//i
-  ];
-
-  const adQueryParams = ["ad_id", "click_id", "aff_id", "prmtracking", "utm_source=ad"];
-
-  // ---------- Entropy / randomness helpers ----------
-  function calculateEntropy(str: string): number {
-    const freq: Record<string, number> = {};
-    for (const char of str) freq[char] = (freq[char] || 0) + 1;
-    let entropy = 0;
-    const len = str.length;
-    for (const char in freq) {
-      const p = freq[char] / len;
-      entropy -= p * Math.log2(p);
-    }
-    return entropy;
-  }
-
-  function isHighEntropy(label: string): boolean {
-    if (label.length < 6) return false;
-    return calculateEntropy(label) > 3.2;
-  }
-
-  function looksRandom(label: string): boolean {
-    const vowels = (label.match(/[aeiou]/gi) || []).length;
-    const digits = (label.match(/[0-9]/g) || []).length;
-
-    if (label.length >= 6 && vowels === 0) return true;           // no vowels at all
-    if (/[bcdfghjklmnpqrstvwxyz]{5,}/i.test(label)) return true;  // consonant wall
-    if (digits > 0 && label.length <= 10 && digits / label.length > 0.25) return true; // digit-heavy
-
-    return false;
-  }
-
-  function isTrustedInfra(hostname: string): boolean {
-    return [...trustedDomains].some(d => hostname === d || hostname.endsWith("." + d));
-  }
-
-  function hasRandomLookingLabel(hostname: string): boolean {
-    if (isTrustedInfra(hostname)) return false;
-    const labels = hostname.split(".").filter(l => l.length > 0);
-    return labels.some(label => {
-      if (label.length < 5) return false;
-      return isHighEntropy(label) || looksRandom(label);
-    });
-  }
-
-  // ---------- Main function ----------
-  const isAdUrl = (rawUrl: any): boolean => {
-    if (!rawUrl) return false;
-
-    let url: URL;
-    try {
-      url = new URL(rawUrl.toString(), window.location.href);
-    } catch {
-      return false; // invalid URL, don't flag
-    }
-
-    const hostname = url.hostname.toLowerCase();
-
-    // Never flag trusted infra domains
-    if (isTrustedInfra(hostname)) return false;
-
-    // 1. Known ad domain (exact or subdomain match)
-    if ([...adDomains].some(d => hostname === d || hostname.endsWith("." + d))) return true;
-
-    // 2. Raw IP host
-    if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname)) return true;
-
-    // 3. Suspicious path
-    if (adPathPatterns.some(re => re.test(url.pathname.toLowerCase()))) return true;
-
-    // 4. Suspicious query params
-    if (adQueryParams.some(p => url.search.toLowerCase().includes(p))) return true;
-
-    // 5. Random-looking domain label (DGA-style generated domains)
-    if (hasRandomLookingLabel(hostname)) return true;
-
-    return false;
-  };
+  // Wrappers bind page context (relative URL resolution / current page host)
+  const isAdUrl = (rawUrl: any): boolean => sharedIsAdUrl(rawUrl, window.location.href);
+  const isExternalAdUrl = (url: any): boolean => sharedIsExternalAdUrl(url.toString(), window.location.href);
 
   let tabCategory = "General Site";
   if ((window as any).__adblockerTabCategory) {
@@ -111,61 +18,7 @@
     if (tabCategory === "Movie Streaming" || tabCategory === "Comic/Manga") {
       return true;
     }
-    try {
-      const host = new URL(urlStr).hostname.toLowerCase();
-      const keywords = [
-        "phim", "chill", "hay", "tv", "vtv", "anime", "cliptv", "fptplay", 
-        "vieon", "mot", "sub", "vietsub", "movie", "movies", "hd", "stream", 
-        "manga", "comic", "truyen", "torrent"
-      ];
-      return keywords.some(kw => host.includes(kw));
-    } catch {
-      return false;
-    }
-  };
-
-  const getCoreDomain = (host: string): string => {
-    const parts = host.toLowerCase().split(".");
-    if (parts.length < 2) return host;
-    const commonSubTlds = ["com", "co", "net", "org", "gov", "edu"];
-    const secondToLast = parts[parts.length - 2];
-    if (parts.length >= 3 && commonSubTlds.includes(secondToLast)) {
-      return parts[parts.length - 3];
-    }
-    return secondToLast;
-  };
-
-  const isExternalAdUrl = (url: any): boolean => {
-    if (!url) return false;
-    try {
-      const targetUrl = new URL(url.toString(), window.location.href);
-      const targetHost = targetUrl.hostname.toLowerCase();
-      const currentHost = window.location.hostname.toLowerCase();
-      
-      // Allow relative paths, same host, or subdomains
-      if (!targetHost || targetHost === currentHost || targetHost.endsWith("." + currentHost)) {
-        return false;
-      }
-
-      // Allow same core brand domain (e.g. phimmoichill.tv on phimmoichill.club)
-      if (getCoreDomain(targetHost) === getCoreDomain(currentHost)) {
-        return false;
-      }
-
-      // Whitelist of safe external domains
-      const whitelist = [
-        "google.com", "facebook.com", "github.com", "twitter.com", 
-        "apple.com", "microsoft.com", "youtube.com", "vimeo.com", 
-        "imdb.com", "wikipedia.org", "discord.com", "reddit.com"
-      ];
-      if (whitelist.some(domain => targetHost === domain || targetHost.endsWith("." + domain))) {
-        return false;
-      }
-
-      return true; // Different domain & not whitelisted -> Block!
-    } catch {
-      return true; // Block on parse errors for maximum safety
-    }
+    return isStreamingKeywordSite(urlStr);
   };
 
   // Helper to determine if we should block the target popup URL based on context
@@ -317,26 +170,4 @@
       }
     }
   }, true);
-
-  // Native Player API Skipper (runs in MAIN world to access window player instances)
-  setInterval(() => {
-    try {
-      // 1. JW Player API Skip
-      if (typeof (window as any).jwplayer === "function") {
-        const jw = (window as any).jwplayer();
-        if (jw && typeof jw.skipAd === "function") {
-          // Find if there is a skip button visible or counting down
-          const skipBtn = document.querySelector(".jw-skip, .jw-skippable, .jw-skip-icon, .jw-skiptext");
-          if (skipBtn && (skipBtn as HTMLElement).offsetWidth > 0) {
-            // Check if it's ready to skip (no active countdown numbers 1-9 in innerText)
-            const text = (skipBtn as HTMLElement).innerText || "";
-            if (!/[1-9]/.test(text)) {
-              jw.skipAd();
-              console.log("[AdBlocker] Native JW Player API skipped the advertisement.");
-            }
-          }
-        }
-      }
-    } catch (e) {}
-  }, 500);
 })();

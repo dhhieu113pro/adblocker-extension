@@ -13,6 +13,24 @@ export const TRUSTED_DOMAINS = new Set([
   "google.com", "youtube.com", "facebook.com", "wikipedia.org", "github.com"
 ]);
 
+// ---------- Hard ad-network URL signatures ----------
+// Match immediately (no AI round-trip) for any resource served from these
+// networks. Shared by content.js (video + image fast-hide) and background.
+export const HARD_AD_NETWORKS = new Set([
+  "populartooth.com", "adm.centraladtool.com", "adsmicro.com", "adx.admicro.vn"
+]);
+const HARD_AD_NETWORK_RE = /populartooth|admicro|adnzone|admzone|adxzone|sspp|adsnano/i;
+
+export function isHardAdNetwork(url?: string): boolean {
+  if (!url) return false;
+  if (HARD_AD_NETWORK_RE.test(url)) return true;
+  try {
+    return HARD_AD_NETWORKS.has(new URL(url).hostname.replace(/^www\./, ""));
+  } catch {
+    return false;
+  }
+}
+
 // ---------- Path / query signatures ----------
 // Heuristic-only: applied to streaming/ad-prone sites, never to normal sites.
 export const AD_PATH_PATTERNS = [

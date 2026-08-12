@@ -1,4 +1,6 @@
 // AI Vision & Heuristic Ad Blocker Content Script
+import { isHardAdNetwork } from "./shared";
+
 class AdBlockerOverlay {
   constructor() {
     this.processedImages = new WeakSet();
@@ -15,6 +17,7 @@ class AdBlockerOverlay {
     this.injectGlobalStyles();
     this.loadSettings();
     this.scanImages();
+    this.scanVideos();
     this.setupMutationObserver();
     this.initMessageListener();
     this.setupContextMenuTracker();
@@ -64,7 +67,8 @@ class AdBlockerOverlay {
         this.autoHideAds = changes.autoHideAds.newValue;
         if (this.autoHideAds) {
           this.scanImages();
-        }
+                  this.scanVideos();
+                }
       }
     });
   }
@@ -164,6 +168,7 @@ class AdBlockerOverlay {
         this.scanClickjackingOverlays();
       }
       this.scanImages();
+            this.scanVideos();
     });
     observer.observe(document.body || document.documentElement, {
       childList: true,
@@ -290,6 +295,85 @@ class AdBlockerOverlay {
     });
   }
 
+  scanVideos() {
+    if (!this.autoHideAds) return;
+
+    const videos = document.querySelectorAll("video");
+    videos.forEach((video) => {
+      if (this.processedImages.has(video)) return;
+
+      const title = (video.getAttribute("title") || "").toLowerCase();
+      const src = (video.currentSrc || video.src || "").toLowerCase();
+      const containsAdTitle = title.includes("advertisement") || title.includes("quảng cáo") || title.includes("qc");
+
+      // Strongest signal: ad player video explicitly labelled as an ad
+      if (containsAdTitle) {
+        this.processedImages.add(video);
+        this.hideAdVideo(video, "Video title indicates advertisement");
+        return;
+      }
+
+      // PlayStream / ad-network video players
+      if (isHardAdNetwork(src)) {
+        this.processedImages.add(video);
+        this.hideAdVideo(video, "Video served from ad network");
+        return;
+      }
+
+      // Wrapped in an ad-slot container (PlayStream, adnzone, admission, etc.)
+      let parent = video;
+      for (let i = 0; i < 4 && parent && parent !== document.body; i++) {
+        const pId = (parent.id || "").toLowerCase();
+        const pCls = (parent.className || "").toString().toLowerCase();
+        if (pId.startsWith("ps-video-slot") || /(playstream|adnzone|admzone|sspp)/.test(pId + " " + pCls)) {
+          this.processedImages.add(video);
+                  this.hideAdVideo(video, `Video inside ad container (${parent.id || pCls})`, parent);
+          return;
+        }
+        parent = parent.parentElement;
+      }
+    });
+  }
+
+  hideAdVideo(video, reason, explicitContainer) {
+    // Climb to the ad container (or use the known one), fall back to the video element itself
+    const targetElement = explicitContainer || this.getAdTargetContainer(video);
+    if (targetElement.dataset.webllmAdHidden === "true") return;
+
+    const originalDisplay = targetElement.style.display || "";
+    targetElement.dataset.webllmOriginalDisplay = originalDisplay;
+    this.hideElement(targetElement);
+
+    // Pause playback to stop audio/network
+    try { video.pause(); } catch {}
+
+    const adId = video.dataset.webllmAdId || "ad_" + Math.random().toString(36).substr(2, 9);
+    video.dataset.webllmAdId = adId;
+
+    const adInfo = {
+      id: adId,
+      url: video.currentSrc || video.src || "Ad Video",
+      domain: "ad video",
+      width: video.videoWidth || 0,
+      height: video.videoHeight || 0,
+      confidence: 95,
+      method: "Auto video ad detection",
+      reasons: [reason],
+      isHidden: true,
+      targetElement,
+      imgElement: video,
+      originalDisplay,
+    };
+
+    this.detectedAdsMap.set(adId, adInfo);
+    chrome.runtime.sendMessage({
+      type: "adBlocked",
+      adUrl: video.currentSrc || video.src,
+      adDomain: "ad video",
+      pageUrl: window.location.href
+    });
+  }
+
   hideAdIframe(iframe) {
     // Target the iframe directly to avoid hiding outer page containers safely
     const targetElement = iframe;
@@ -359,6 +443,18 @@ class AdBlockerOverlay {
 
         if (this.autoHideAds) {
           const imgSrc = img.currentSrc || img.src;
+
+          // Hard ad-network signature: hide immediately, no AI round-trip needed
+          if (isHardAdNetwork(imgSrc)) {
+            this.hideAd(img, {
+              isAd: true,
+              confidence: 95,
+              imgElement: img,
+              reasons: [`Ad network URL (${new URL(imgSrc).hostname})`],
+            });
+            this.cleanupEmptyAdContainers();
+            return;
+          }
 
           let linkUrl = "";
           let linkRel = "";

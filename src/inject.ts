@@ -27,9 +27,7 @@ import { isAdUrl as sharedIsAdUrl, isStreamingKeywordSite, isExternalAdUrl as sh
     const isStreaming = isStreamingOrAdProneSite(window.location.href);
     // If it's a streaming site, strictly block any external URL (except whitelist/same-brand)
     // If it's a normal site, only block if the target URL explicitly matches known ad domains
-    return isStreaming 
-          ? (isAdUrl(targetUrl, true) || isExternalAdUrl(targetUrl))
-      : isAdUrl(targetUrl);
+    return isStreaming && (isAdUrl(targetUrl, true) || isExternalAdUrl(targetUrl));
   };
 
   // Hook window.open and return Proxy to catch blank window locations
@@ -150,7 +148,7 @@ import { isAdUrl as sharedIsAdUrl, isStreamingKeywordSite, isExternalAdUrl as sh
     if (link) {
       const href = link.href || "";
       // Block standard ad URLs on all sites (heuristics only on streaming/ad-prone sites)
-      if (isAdUrl(href, isStreaming)) {
+      if (isStreaming && isAdUrl(href, true)) {
         console.warn("[AdBlocker] Hook blocked click redirection to:", href);
         e.preventDefault();
         e.stopPropagation();

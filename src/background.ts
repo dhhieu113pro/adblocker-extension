@@ -442,12 +442,10 @@ chrome.webNavigation.onCreatedNavigationTarget.addListener((details) => {
       const sourceUrl = sourceTab.url;
       if (sourceUrl.startsWith("chrome://") || sourceUrl.startsWith("chrome-extension://")) return;
 
-      // Close popups if:
-      // a) The source is a movie streaming site and the target is different domain (not whitelisted)
-      // b) The source is NOT a streaming site, but the target explicitly matches known ad networks
-      const shouldBlock = isStreamingOrAdProneSite(sourceUrl, details.sourceTabId)
-        ? isExternalAdUrl(details.url, sourceUrl)
-                : isAdUrl(details.url);
+      // Only close popups opened from streaming/ad-prone sites.
+      const shouldBlock =
+        isStreamingOrAdProneSite(sourceUrl, details.sourceTabId) &&
+        isExternalAdUrl(details.url, sourceUrl);
 
       if (shouldBlock) {
         console.warn("[AdBlocker] Service worker closed popup redirect tab:", details.url);

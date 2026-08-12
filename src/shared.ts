@@ -118,8 +118,11 @@ export function isAdUrl(rawUrl: any, baseUrl?: string, aggressive = false): bool
   // 1. Known ad domain (exact or subdomain match) — hard signal, all sites
   if ([...AD_DOMAINS].some(d => hostname === d || hostname.endsWith("." + d))) return true;
 
-  // 2. Raw IP host — hard signal, all sites
-  if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname)) return true;
+  // 2. Raw external IP host — hard signal, but keep local development links usable
+  if (
+    /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname) &&
+    !["0.0.0.0", "127.0.0.1"].includes(hostname)
+  ) return true;
 
   // Heuristic signals below can false-positive on legit pages (e.g. /ads/ on a news site),
   // so they only apply on streaming/ad-prone sites where aggressive blocking is justified.

@@ -14,11 +14,11 @@ export const TRUSTED_DOMAINS = new Set([
 ]);
 
 // ---------- Path / query signatures ----------
+// Heuristic-only: applied to streaming/ad-prone sites, never to normal sites.
 export const AD_PATH_PATTERNS = [
   /\/ads?\//i, /\/adserver\//i, /\/popunder/i, /\/clickunder/i,
-  /\/sponsored\//i, /\/shortlink\//i, /\/redirect\//i, /\/promos?\//i,
-  /\/baogia\//i // Vietnamese news sites use /baogia/ as the advertising rate-card path (e.g. saostar.vn/baogia/*.pdf)
-];
+  /\/sponsored\//i, /\/shortlink\//i, /\/redirect\//i, /\/promos?\//i
+]; // ponytail: removed /baogia/ rule (false positives); heuristics gated behind aggressive flag
 
 export const AD_QUERY_PARAMS = ["ad_id", "click_id", "aff_id", "prmtracking", "utm_source=ad"];
 
@@ -80,7 +80,9 @@ export function hasRandomLookingLabel(hostname: string): boolean {
 
 // ---------- Main ad URL matcher ----------
 // baseUrl resolves relative URLs (content-script context); omit it for absolute URLs only.
-export function isAdUrl(rawUrl: any, baseUrl?: string): boolean {
+// aggressive=true enables heuristic signals (path/query/entropy) — only for streaming/ad-prone sites
+// where a legit page with an "/ads/" path is far less likely.
+export function isAdUrl(rawUrl: any, baseUrl?: string, aggressive = false): boolean {
   if (!rawUrl) return false;
 
   let url: URL;
@@ -92,22 +94,26 @@ export function isAdUrl(rawUrl: any, baseUrl?: string): boolean {
 
   const hostname = url.hostname.toLowerCase();
 
-  // Never flag trusted infra domains
+  // Never flag trusted infra domains (CDNs, mainstream sites) — even aggressive
   if (isTrustedInfra(hostname)) return false;
 
-  // 1. Known ad domain (exact or subdomain match)
+  // 1. Known ad domain (exact or subdomain match) — hard signal, all sites
   if ([...AD_DOMAINS].some(d => hostname === d || hostname.endsWith("." + d))) return true;
 
-  // 2. Raw IP host
+  // 2. Raw IP host — hard signal, all sites
   if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname)) return true;
 
-  // 3. Suspicious path
+  // Heuristic signals below can false-positive on legit pages (e.g. /ads/ on a news site),
+  // so they only apply on streaming/ad-prone sites where aggressive blocking is justified.
+  if (!aggressive) return false;
+
+  // 3. Suspicious path — heuristic
   if (AD_PATH_PATTERNS.some(re => re.test(url.pathname.toLowerCase()))) return true;
 
-  // 4. Suspicious query params
+  // 4. Suspicious query params — heuristic
   if (AD_QUERY_PARAMS.some(p => url.search.toLowerCase().includes(p))) return true;
 
-  // 5. Random-looking domain label (DGA-style generated domains)
+  // 5. Random-looking domain label (DGA-style generated domains) — heuristic
   if (hasRandomLookingLabel(hostname)) return true;
 
   return false;

@@ -479,7 +479,7 @@ chrome.webNavigation.onBeforeNavigate.addListener((details) => {
     }
 
     // Only block same-tab redirects if the source is a streaming site AND the target matches ad patterns
-    const shouldBlock = isStreamingOrAdProneSite(sourceUrl, details.tabId) && isAdUrl(details.url);
+    const shouldBlock = isStreamingOrAdProneSite(sourceUrl, details.tabId) && isAdUrl(details.url, undefined, true);
 
     if (shouldBlock) {
       console.warn("[AdBlocker] Service worker blocked same-tab ad redirect to:", details.url);

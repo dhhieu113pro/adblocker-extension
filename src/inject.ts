@@ -2,7 +2,8 @@ import { isAdUrl as sharedIsAdUrl, isStreamingKeywordSite, isExternalAdUrl as sh
 
 (function() {
   // Wrappers bind page context (relative URL resolution / current page host)
-  const isAdUrl = (rawUrl: any): boolean => sharedIsAdUrl(rawUrl, window.location.href);
+    const isAdUrl = (rawUrl: any, aggressive = false): boolean =>
+      sharedIsAdUrl(rawUrl, window.location.href, aggressive);
   const isExternalAdUrl = (url: any): boolean => sharedIsExternalAdUrl(url.toString(), window.location.href);
 
   let tabCategory = "General Site";
@@ -27,7 +28,7 @@ import { isAdUrl as sharedIsAdUrl, isStreamingKeywordSite, isExternalAdUrl as sh
     // If it's a streaming site, strictly block any external URL (except whitelist/same-brand)
     // If it's a normal site, only block if the target URL explicitly matches known ad domains
     return isStreaming 
-      ? (isAdUrl(targetUrl) || isExternalAdUrl(targetUrl))
+          ? (isAdUrl(targetUrl, true) || isExternalAdUrl(targetUrl))
       : isAdUrl(targetUrl);
   };
 
@@ -148,8 +149,8 @@ import { isAdUrl as sharedIsAdUrl, isStreamingKeywordSite, isExternalAdUrl as sh
     const link = target.closest("a");
     if (link) {
       const href = link.href || "";
-      // Block standard ad URLs on all sites
-      if (isAdUrl(href)) {
+      // Block standard ad URLs on all sites (heuristics only on streaming/ad-prone sites)
+      if (isAdUrl(href, isStreaming)) {
         console.warn("[AdBlocker] Hook blocked click redirection to:", href);
         e.preventDefault();
         e.stopPropagation();

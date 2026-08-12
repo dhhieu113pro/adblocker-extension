@@ -1,5 +1,126 @@
+import { isAdUrl, isExternalAdUrl, isStreamingKeywordSite, AD_DOMAINS } from "./shared";
+
 const tabBlockedCounts = new Map<number, number>();
 const tabCategories = new Map<number, { category: string, confidence: number }>();
+
+// --- Declarative Net Request blocking (#5) ---
+const AD_DNR_BASE = 1000;
+const DNR_RESOURCE_TYPES: chrome.declarativeNetRequest.ResourceType[] = [
+  "main_frame", "sub_frame", "script", "image", "xmlhttprequest",
+  "other", "media", "stylesheet", "font", "websocket", "ping",
+];
+
+async function setupDnrRules() {
+  try {
+    const existing = await chrome.declarativeNetRequest.getDynamicRules();
+    const existingIds = existing.map((r) => r.id);
+    const adDomains = Array.from(AD_DOMAINS);
+    const rules = adDomains.map((domain, i) => ({
+      id: AD_DNR_BASE + i,
+      priority: 1,
+      action: { type: "block" as const },
+      condition: {
+        urlFilter: `||${domain}^`,
+        resourceTypes: DNR_RESOURCE_TYPES,
+      },
+    }));
+
+    await chrome.declarativeNetRequest.updateDynamicRules({
+      removeRuleIds: existingIds,
+      addRules: rules,
+    });
+    console.log(`DNR: ${rules.length} ad-domain block rules installed`);
+  } catch (e) {
+    console.warn("DNR setup failed:", e);
+  }
+}
+
+setupDnrRules();
+
+// --- Per-image CLIP result cache (#3) ---
+const CLIP_CACHE_KEY = "webllmClipCache";
+const CLIP_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const CLIP_CACHE_MAX = 500;
+
+let clipCache = new Map<string, { label: string; score: number; aiConfidence: number; isAd: boolean; ts: number }>();
+let clipCacheLoaded = false;
+let clipCacheSaveTimer: number | undefined;
+const inFlightClassify = new Map<string, Promise<any>>();
+
+async function loadClipCache() {
+  if (clipCacheLoaded) return;
+  try {
+    const data = await chrome.storage.local.get(CLIP_CACHE_KEY);
+    if (data && data[CLIP_CACHE_KEY]) {
+      clipCache = new Map(Object.entries(data[CLIP_CACHE_KEY]));
+    }
+  } catch {}
+  clipCacheLoaded = true;
+}
+
+function getCachedClip(imageUrl?: string) {
+  if (!imageUrl) return undefined;
+  const entry = clipCache.get(imageUrl);
+  if (!entry) return undefined;
+  if (Date.now() - entry.ts > CLIP_CACHE_TTL_MS) {
+    clipCache.delete(imageUrl);
+    return undefined;
+  }
+  return entry;
+}
+
+function setCachedClip(imageUrl: string, entry: { label: string; score: number; aiConfidence: number; isAd: boolean; ts: number }) {
+  if (!imageUrl) return;
+  if (clipCache.size >= CLIP_CACHE_MAX) {
+    let oldestKey = "";
+    let oldestTs = Infinity;
+    clipCache.forEach((v, k) => { if (v.ts < oldestTs) { oldestTs = v.ts; oldestKey = k; } });
+    if (oldestKey) clipCache.delete(oldestKey);
+  }
+  clipCache.set(imageUrl, entry);
+  clearTimeout(clipCacheSaveTimer);
+  clipCacheSaveTimer = setTimeout(() => {
+    try {
+      chrome.storage.local.set({ [CLIP_CACHE_KEY]: Object.fromEntries(clipCache) });
+    } catch {}
+  }, 500);
+}
+
+loadClipCache();
+
+// Coalesces concurrent classify calls for the same image and writes the cache.
+async function classifyAdWithCache(message: any, heuristics: any) {
+  if (message.imageUrl) {
+    const pending = inFlightClassify.get(message.imageUrl);
+    if (pending) return pending;
+  }
+
+  const p = chrome.runtime.sendMessage({
+    type: "clipClassifyAd",
+    imageDataUrl: message.imageDataUrl,
+    target: "offscreen",
+  }).then((res: any) => {
+    if (res?.results && Array.isArray(res.results) && res.results.length > 0 && message.imageUrl) {
+      const top = res.results[0];
+      const aiConfidence = Math.round(top.score * 100);
+      const isAdFromAI = top.label.includes("advertisement") || top.label.includes("banner");
+      setCachedClip(message.imageUrl, {
+        label: top.label,
+        score: top.score,
+        aiConfidence: Math.max(aiConfidence, heuristics.confidence),
+        isAd: isAdFromAI || heuristics.isAd,
+        ts: Date.now(),
+      });
+    }
+    return res;
+  }).catch(() => undefined);
+
+  if (message.imageUrl) {
+    inFlightClassify.set(message.imageUrl, p);
+    p.then(() => inFlightClassify.delete(message.imageUrl));
+  }
+  return p;
+}
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   if (changeInfo.status === "loading") {
@@ -118,31 +239,43 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
 
         if (message.imageDataUrl) {
-          await ensureOffscreenDocument();
-          const aiResult = await chrome.runtime.sendMessage({
-            type: "clipClassifyAd",
-            imageDataUrl: message.imageDataUrl,
-            target: "offscreen",
-          });
+                  // #3 - Serve from cache before touching the ~350MB CLIP model
+                  const cached = getCachedClip(message.imageUrl);
+                  if (cached) {
+                    sendResponse({
+                      success: true,
+                      isAd: cached.isAd,
+                      confidence: cached.aiConfidence,
+                      method: "CLIP Cache",
+                      reasons: [
+                        `AI Classification (cached): "${cached.label}" (${cached.aiConfidence}%)`,
+                        ...heuristics.reasons,
+                      ],
+                    });
+                    return;
+                  }
 
-          if (aiResult?.results && Array.isArray(aiResult.results)) {
-            const topResult = aiResult.results[0];
-            const isAdFromAI = topResult.label.includes("advertisement") || topResult.label.includes("banner");
-            const aiConfidence = Math.round(topResult.score * 100);
+                  await ensureOffscreenDocument();
+                  const aiResult = await classifyAdWithCache(message, heuristics);
 
-            sendResponse({
-              success: true,
-              isAd: isAdFromAI || heuristics.isAd,
-              confidence: Math.max(aiConfidence, heuristics.confidence),
-              method: "CLIP Zero-Shot AI + Heuristics",
-              reasons: [
-                `AI Classification: "${topResult.label}" (${aiConfidence}%)`,
-                ...heuristics.reasons,
-              ],
-            });
-            return;
-          }
-        }
+                  if (aiResult?.results && Array.isArray(aiResult.results)) {
+                    const topResult = aiResult.results[0];
+                    const isAdFromAI = topResult.label.includes("advertisement") || topResult.label.includes("banner");
+                    const aiConfidence = Math.round(topResult.score * 100);
+
+                    sendResponse({
+                      success: true,
+                      isAd: isAdFromAI || heuristics.isAd,
+                      confidence: Math.max(aiConfidence, heuristics.confidence),
+                      method: "CLIP Zero-Shot AI + Heuristics",
+                      reasons: [
+                        `AI Classification: "${topResult.label}" (${aiConfidence}%)`,
+                        ...heuristics.reasons,
+                      ],
+                    });
+                    return;
+                  }
+                }
 
         sendResponse({
           success: true,
@@ -260,53 +393,6 @@ function analyzeAdHeuristics(
   };
 }
 
-function getCoreDomain(host: string): string {
-  const parts = host.toLowerCase().split(".");
-  if (parts.length < 2) return host;
-  const commonSubTlds = ["com", "co", "net", "org", "gov", "edu"];
-  const secondToLast = parts[parts.length - 2];
-  if (parts.length >= 3 && commonSubTlds.includes(secondToLast)) {
-    return parts[parts.length - 3];
-  }
-  return secondToLast;
-}
-
-function isExternalAdUrl(targetUrlStr: string, sourceUrlStr: string): boolean {
-  try {
-    const targetUrl = new URL(targetUrlStr);
-    const sourceUrl = new URL(sourceUrlStr);
-    
-    if (targetUrl.protocol === "chrome-extension:" || targetUrl.protocol === "about:") {
-      return false;
-    }
-    
-    const targetHost = targetUrl.hostname.toLowerCase();
-    const sourceHost = sourceUrl.hostname.toLowerCase();
-    
-    if (!targetHost || targetHost === sourceHost || targetHost.endsWith("." + sourceHost)) {
-      return false;
-    }
-
-    // Allow same core brand domain (e.g. phimmoichill.tv on phimmoichill.club)
-    if (getCoreDomain(targetHost) === getCoreDomain(sourceHost)) {
-      return false;
-    }
-    
-    const whitelist = [
-      "google.com", "facebook.com", "github.com", "twitter.com", 
-      "apple.com", "microsoft.com", "youtube.com", "vimeo.com", 
-      "imdb.com", "wikipedia.org", "discord.com", "reddit.com"
-    ];
-    if (whitelist.some(domain => targetHost === domain || targetHost.endsWith("." + domain))) {
-      return false;
-    }
-    
-    return true; // Different domain & not whitelisted -> Yes, block!
-  } catch (e) {
-    return true;
-  }
-}
-
 function isStreamingOrAdProneSite(urlStr: string, tabId?: number): boolean {
   if (tabId !== undefined) {
     const data = tabCategories.get(tabId);
@@ -315,115 +401,7 @@ function isStreamingOrAdProneSite(urlStr: string, tabId?: number): boolean {
     }
   }
 
-  try {
-    const host = new URL(urlStr).hostname.toLowerCase();
-    const keywords = [
-      "phim", "chill", "hay", "tv", "vtv", "anime", "cliptv", "fptplay", 
-      "vieon", "mot", "sub", "vietsub", "movie", "movies", "hd", "stream", 
-      "manga", "comic", "truyen", "torrent"
-    ];
-    return keywords.some(kw => host.includes(kw));
-  } catch {
-    return false;
-  }
-}
-
-// ---------- Known ad / redirect domains ----------
-const adDomains = new Set([
-  "doubleclick.net", "googlesyndication.com", "googleadservices.com",
-  "adsterra.com", "popads.net", "popcash.net", "exoclick.com",
-  "juicyads.com", "propellerads.com", "taboola.com", "outbrain.com",
-  "i9.top", "colatv.vn", "vsbet.com", "nhacai.com", "rg.pro.vn"
-]);
-
-// ---------- Domains to never flag (CDNs, infra, mainstream sites) ----------
-const trustedDomains = new Set([
-  "cloudfront.net", "amazonaws.com", "googleapis.com", "gstatic.com",
-  "cloudflare.com", "github.io", "vercel.app", "netlify.app",
-  "google.com", "youtube.com", "facebook.com", "wikipedia.org", "github.com"
-]);
-
-// ---------- Path / query signatures ----------
-const adPathPatterns = [
-  /\/ads?\//i, /\/adserver\//i, /\/popunder/i, /\/clickunder/i,
-  /\/sponsored\//i, /\/shortlink\//i, /\/redirect\//i, /\/promos?\//i
-];
-
-const adQueryParams = ["ad_id", "click_id", "aff_id", "prmtracking", "utm_source=ad"];
-
-// ---------- Entropy / randomness helpers ----------
-function calculateEntropy(str: string): number {
-  const freq: Record<string, number> = {};
-  for (const char of str) freq[char] = (freq[char] || 0) + 1;
-  let entropy = 0;
-  const len = str.length;
-  for (const char in freq) {
-    const p = freq[char] / len;
-    entropy -= p * Math.log2(p);
-  }
-  return entropy;
-}
-
-function isHighEntropy(label: string): boolean {
-  if (label.length < 6) return false;
-  return calculateEntropy(label) > 3.2;
-}
-
-function looksRandom(label: string): boolean {
-  const vowels = (label.match(/[aeiou]/gi) || []).length;
-  const digits = (label.match(/[0-9]/g) || []).length;
-
-  if (label.length >= 6 && vowels === 0) return true;           // no vowels at all
-  if (/[bcdfghjklmnpqrstvwxyz]{5,}/i.test(label)) return true;  // consonant wall
-  if (digits > 0 && label.length <= 10 && digits / label.length > 0.25) return true; // digit-heavy
-
-  return false;
-}
-
-function isTrustedInfra(hostname: string): boolean {
-  return [...trustedDomains].some(d => hostname === d || hostname.endsWith("." + d));
-}
-
-function hasRandomLookingLabel(hostname: string): boolean {
-  if (isTrustedInfra(hostname)) return false;
-  const labels = hostname.split(".").filter(l => l.length > 0);
-  return labels.some(label => {
-    if (label.length < 5) return false;
-    return isHighEntropy(label) || looksRandom(label);
-  });
-}
-
-function isAdPattern(rawUrl: string): boolean {
-  if (!rawUrl) return false;
-
-  let url: URL;
-  try {
-    url = new URL(rawUrl);
-  } catch {
-    return false; // invalid URL, don't flag
-  }
-
-  const hostname = url.hostname.toLowerCase();
-
-  // Never flag trusted infra domains
-  if (isTrustedInfra(hostname)) return false;
-
-  // 1. Known ad domain (exact or subdomain match)
-  if ([...adDomains].some(d => hostname === d || hostname.endsWith("." + d))) return true;
-
-  // 2. Raw IP host
-  if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname)) return true;
-
-  // 3. Suspicious path
-  if (adPathPatterns.some(re => re.test(url.pathname.toLowerCase()))) return true;
-
-  // 4. Suspicious query params
-  if (adQueryParams.some(p => url.search.toLowerCase().includes(p))) return true;
-
-  // 5. Random-looking domain label (DGA-style generated domains)
-  if (hasRandomLookingLabel(hostname)) return true;
-
-  return false;
+  return isStreamingKeywordSite(urlStr);
 }
 
 function logAdBlockedInHistory(adUrl: string, pageUrl: string) {
@@ -469,7 +447,7 @@ chrome.webNavigation.onCreatedNavigationTarget.addListener((details) => {
       // b) The source is NOT a streaming site, but the target explicitly matches known ad networks
       const shouldBlock = isStreamingOrAdProneSite(sourceUrl, details.sourceTabId)
         ? isExternalAdUrl(details.url, sourceUrl)
-        : isAdPattern(details.url);
+                : isAdUrl(details.url);
 
       if (shouldBlock) {
         console.warn("[AdBlocker] Service worker closed popup redirect tab:", details.url);
@@ -501,7 +479,7 @@ chrome.webNavigation.onBeforeNavigate.addListener((details) => {
     }
 
     // Only block same-tab redirects if the source is a streaming site AND the target matches ad patterns
-    const shouldBlock = isStreamingOrAdProneSite(sourceUrl, details.tabId) && isAdPattern(details.url);
+    const shouldBlock = isStreamingOrAdProneSite(sourceUrl, details.tabId) && isAdUrl(details.url);
 
     if (shouldBlock) {
       console.warn("[AdBlocker] Service worker blocked same-tab ad redirect to:", details.url);

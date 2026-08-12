@@ -5,6 +5,9 @@ class AdBlockerOverlay {
     this.detectedAdsMap = new Map();
     this.autoHideAds = true;
     this.lastRightClickedElement = null;
+    this.adCheckQueue = [];
+    this.adCheckProcessing = false;
+    this.adCheckUrls = new Set();
     this.init();
   }
 
@@ -15,7 +18,7 @@ class AdBlockerOverlay {
     this.setupMutationObserver();
     this.initMessageListener();
     this.setupContextMenuTracker();
-    this.setupVideoAdSkipper();
+    setInterval(() => this.scanClickjackingOverlays(), 1000);
   }
 
   setupContextMenuTracker() {
@@ -389,23 +392,15 @@ class AdBlockerOverlay {
             currEl = parent;
           }
 
-          chrome.runtime.sendMessage(
-            {
-              type: "detectAd",
-              imageUrl: imgSrc,
-              width,
-              height,
-              linkUrl,
-              linkRel,
-              hasCloseAdButton,
-            },
-            (res) => {
-              if (res?.isAd && res.confidence >= 50) {
-                this.hideAd(img, res);
-                this.cleanupEmptyAdContainers();
-              }
-            }
-          );
+          // #4 - De-dupe + throttle burst scans via a serial queue
+          this.enqueueAdCheck(img, {
+            imageUrl: imgSrc,
+            width,
+            height,
+            linkUrl,
+            linkRel,
+            hasCloseAdButton,
+          });
         }
       };
 
@@ -417,6 +412,44 @@ class AdBlockerOverlay {
     });
 
     this.cleanupEmptyAdContainers();
+  }
+
+  // #4 - Serial, de-duped queue to throttle burst scans
+  enqueueAdCheck(img, msg) {
+    if (!msg.imageUrl) return;
+    if (this.adCheckUrls.has(msg.imageUrl)) return;
+
+    this.adCheckUrls.add(msg.imageUrl);
+    this.adCheckQueue.push({ img, msg });
+
+    if (!this.adCheckProcessing) {
+      this.processAdCheckQueue();
+    }
+  }
+
+  async processAdCheckQueue() {
+    if (this.adCheckProcessing) return;
+    this.adCheckProcessing = true;
+
+    while (this.adCheckQueue.length > 0) {
+      const { img, msg } = this.adCheckQueue.shift();
+
+      await new Promise((resolve) => {
+        chrome.runtime.sendMessage({ type: "detectAd", ...msg }, (res) => {
+          if (res?.isAd && res.confidence >= 50) {
+            this.hideAd(img, res);
+            this.cleanupEmptyAdContainers();
+          }
+          resolve();
+        });
+      });
+
+      // Space out classify calls to keep the tab responsive
+      await new Promise((r) => setTimeout(r, 200));
+    }
+
+    this.adCheckProcessing = false;
+    this.adCheckUrls.clear();
   }
 
   getAdTargetContainer(img) {
@@ -754,254 +787,6 @@ class AdBlockerOverlay {
         }
         modal.remove();
       };
-    }
-  }
-
-  setupVideoAdSkipper() {
-    setInterval(() => {
-      this.scanVideoAds();
-      this.scanClickjackingOverlays();
-    }, 500);
-  }
-
-  scanVideoAds() {
-    const queryAllIncludingShadows = (selector, root = document) => {
-      let elements = Array.from(root.querySelectorAll(selector));
-      const all = root.querySelectorAll('*');
-      for (const el of all) {
-        if (el.shadowRoot) {
-          elements = elements.concat(queryAllIncludingShadows(selector, el.shadowRoot));
-        }
-      }
-      return elements;
-    };
-
-    const videos = queryAllIncludingShadows("video");
-    if (videos.length === 0) return;
-
-    const isElementVisible = (el) => {
-      const rect = el.getBoundingClientRect();
-      const style = window.getComputedStyle(el);
-      return (
-        rect.width > 0 &&
-        rect.height > 0 &&
-        style.display !== "none" &&
-        style.visibility !== "hidden" &&
-        style.opacity !== "0"
-      );
-    };
-
-    // Find any skip ad button on the page (including inside Shadow Roots)
-    const buttons = queryAllIncludingShadows("button, div, span, a");
-    
-    const AD_SKIP_TEXT_PATTERNS = [
-      /\bbỏ\s*qua\b/i,
-      /\bbo\s*qua\b/i,
-      /\bskip\s*(ad|ads|quảng\s*cáo)?\b/i,
-      /\bquảng\s*cáo\b/i,
-      /\badvert\b/i,
-      /\bđóng\s*quảng\s*cáo\b/i,
-      /\bclose\s*ad\b/i,
-      /(^|\s)qc(\s|$)/i, // standalone "qc" token only, not a substring
-    ];
-
-    const AD_SKIP_CLASS_PATTERNS = [
-      "skip-ad", "ad-skip", "skip-button", "skipqc", "btn-skip",
-      "jw-skip", "vjs-skip", "ytp-skip", "ytp-ad-skip",
-      "close-ad", "ad-close", "video-ads__skip"
-    ];
-
-    const CLICKABLE_TAGS = new Set(["BUTTON", "A", "DIV", "SPAN"]);
-
-    const isSkipButton = (el) => {
-      if (!el || !el.tagName) return false;
-      if (el.children.length > 3) return false;
-      if (!isElementVisible(el)) return false;
-
-      // Restrict to plausible interactive elements
-      const isInteractive =
-        CLICKABLE_TAGS.has(el.tagName) &&
-        (el.tagName === "BUTTON" ||
-          el.tagName === "A" ||
-          el.getAttribute("role") === "button" ||
-          el.onclick != null ||
-          el.style.cursor === "pointer" ||
-          el.hasAttribute("tabindex"));
-      if (!isInteractive) return false;
-
-      const text = (el.textContent || el.innerText || "").trim().toLowerCase();
-      const cls = (el.className || "").toString().toLowerCase();
-      const id = (el.id || "").toString().toLowerCase();
-      const aria = (el.getAttribute("aria-label") || "").toLowerCase();
-
-      // Skip elements with too much text — real skip buttons are short labels
-      if (text.length > 40) return false;
-
-      const isMatchText =
-        AD_SKIP_TEXT_PATTERNS.some(re => re.test(text)) ||
-        AD_SKIP_TEXT_PATTERNS.some(re => re.test(aria));
-
-      const isMatchClass =
-        AD_SKIP_CLASS_PATTERNS.some(p => cls.includes(p) || id.includes(p));
-
-      return isMatchText || isMatchClass;
-    };
-
-    const skipBtn = buttons.find(isSkipButton);
-
-    if (skipBtn) {
-      // Find the playing video element
-      const activeVideo = videos.find(v => !v.paused) || videos[0];
-      
-      if (activeVideo) {
-        if (activeVideo.dataset.webllmCoverBypassed === "true") {
-          return;
-        }
-        // 1. Mute the video
-        if (!activeVideo.muted) {
-          activeVideo.muted = true;
-          activeVideo.dataset.webllmAutoMuted = "true";
-        }
-
-        // 2. Show black cover overlay
-        this.showVideoAdCover(activeVideo);
-
-        // 3. Auto-click if skip is ready (no active countdown digits 1-9 in visible text)
-        const btnText = (skipBtn.innerText || "").trim();
-        const hasCountdown = /[1-9]/.test(btnText) || 
-                            (skipBtn.disabled) || 
-                            (skipBtn.getAttribute("disabled") !== null) ||
-                            /\bdisabled\b/i.test(skipBtn.className || "") ||
-                            /\bwaiting\b/i.test(skipBtn.className || "");
-
-        if (!hasCountdown) {
-          console.log("[AdBlocker] Clickable skip button found! Auto-skipping video ad.");
-          
-          const simulateFullClick = (el) => {
-            if (!el) return;
-            try { el.click(); } catch (e) {}
-            const eventTypes = ["mousedown", "mouseup", "click"];
-            eventTypes.forEach(type => {
-              try {
-                const evt = new MouseEvent(type, {
-                  bubbles: true,
-                  cancelable: true,
-                  view: window,
-                  buttons: 1
-                });
-                el.dispatchEvent(evt);
-              } catch (e) {}
-            });
-          };
-
-          // Dispatch mouse events to the outer container and all its children (spans, svgs)
-          simulateFullClick(skipBtn);
-          const childElements = Array.from(skipBtn.querySelectorAll("*"));
-          childElements.forEach(child => simulateFullClick(child));
-
-          // Remove cover and unmute immediately
-          this.removeVideoAdCover(activeVideo);
-          if (activeVideo.dataset.webllmAutoMuted === "true") {
-            activeVideo.muted = false;
-            delete activeVideo.dataset.webllmAutoMuted;
-          }
-        }
-      }
-    } else {
-      // No skip ad button present on page, clean up covers and unmute if we auto-muted
-      videos.forEach(video => {
-        this.removeVideoAdCover(video);
-        if (video.dataset.webllmAutoMuted === "true") {
-          video.muted = false;
-          delete video.dataset.webllmAutoMuted;
-        }
-      });
-    }
-  }
-
-  showVideoAdCover(videoEl) {
-    const parent = videoEl.parentElement;
-    if (!parent) return;
-
-    if (parent.querySelector("#webllm-video-ad-cover")) return;
-
-    const cover = document.createElement("div");
-    cover.id = "webllm-video-ad-cover";
-    Object.assign(cover.style, {
-      position: "absolute",
-      top: "0",
-      left: "0",
-      width: "100%",
-      height: "100%",
-      backgroundColor: "#000000",
-      zIndex: "2147483645",
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      justifyContent: "center",
-      color: "#ffffff",
-      fontFamily: "system-ui, -apple-system, sans-serif",
-      fontSize: "16px",
-      fontWeight: "bold",
-      pointerEvents: "auto",
-    });
-
-    cover.innerHTML = `
-      <div style="display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center; padding: 20px;">
-        <svg style="width: 48px; height: 48px; fill: #ef4444; animation: webllm-pulse 1.5s infinite;" viewBox="0 0 24 24">
-          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
-        </svg>
-        <span style="font-size: 15px; color: #f8fafc;">🛡️ AI Vision Ad Blocker</span>
-        <span style="font-size: 12px; font-weight: normal; color: #94a3b8; margin-bottom: 8px;">Muting and skipping video advertisement...</span>
-        <button id="webllm-close-ad-cover-btn" style="background: rgba(255, 255, 255, 0.15); border: 1px solid rgba(255, 255, 255, 0.3); color: #f8fafc; padding: 6px 14px; border-radius: 6px; font-size: 11px; cursor: pointer; font-weight: bold; font-family: inherit; transition: background 0.2s; pointer-events: auto;">
-          ✕ Close Cover & Unmute
-        </button>
-      </div>
-      <style>
-        #webllm-close-ad-cover-btn:hover {
-          background: rgba(255, 255, 255, 0.25) !important;
-        }
-        @keyframes webllm-pulse {
-          0% { transform: scale(1); opacity: 1; }
-          50% { transform: scale(1.1); opacity: 0.7; }
-          100% { transform: scale(1); opacity: 1; }
-        }
-      </style>
-    `;
-
-    const closeBtn = cover.querySelector("#webllm-close-ad-cover-btn");
-    if (closeBtn) {
-      closeBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        e.preventDefault();
-        
-        // Remove cover and restore volume
-        this.removeVideoAdCover(videoEl);
-        if (videoEl.dataset.webllmAutoMuted === "true") {
-          videoEl.muted = false;
-          delete videoEl.dataset.webllmAutoMuted;
-        }
-        
-        // Mark as bypassed so we don't cover it again for this ad cycle
-        videoEl.dataset.webllmCoverBypassed = "true";
-        setTimeout(() => {
-          delete videoEl.dataset.webllmCoverBypassed;
-        }, 30000); // 30s bypass cooldown
-      });
-    }
-
-    const parentStyle = window.getComputedStyle(parent);
-    if (parentStyle.position === "static") {
-      parent.style.position = "relative";
-    }
-    parent.appendChild(cover);
-  }
-
-  removeVideoAdCover(videoEl) {
-    const parent = videoEl.parentElement;
-    if (parent) {
-      const cover = parent.querySelector("#webllm-video-ad-cover");
-      if (cover) cover.remove();
     }
   }
 

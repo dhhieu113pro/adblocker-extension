@@ -1,3 +1,5 @@
+import { STREAMING_KEYWORDS, COMIC_KEYWORDS } from "./shared";
+
 document.addEventListener("DOMContentLoaded", () => {
   const autoHideToggle = document.getElementById("auto-hide-toggle") as HTMLInputElement;
   const adListContainer = document.getElementById("ad-list") as HTMLElement;
@@ -36,8 +38,8 @@ document.addEventListener("DOMContentLoaded", () => {
       let matchedHeuristics = false;
       try {
         const host = new URL(urlStr).hostname.toLowerCase();
-        const movieKeywords = ["phim", "chill", "hay", "tv", "vtv", "anime", "cliptv", "fptplay", "vieon", "mot", "sub", "vietsub", "movie", "movies", "hd", "stream"];
-        const comicKeywords = ["manga", "comic", "truyen", "torrent"];
+        const movieKeywords = STREAMING_KEYWORDS;
+        const comicKeywords = COMIC_KEYWORDS;
         
         if (movieKeywords.some(kw => host.includes(kw))) {
           initialCategory = "🎬 Movie Streaming (Heuristic)";

@@ -10,14 +10,16 @@
     "storage",
     "contextMenus",
     "webNavigation",
-    "tabs"
-  ],
+        "tabs",
+        "declarativeNetRequest"
+      ],
   "host_permissions": [
     "<all_urls>"
   ],
   "background": {
-    "service_worker": "background.ts"
-  },
+      "service_worker": "background.ts",
+      "type": "module"
+    },
   "content_scripts": [
     {
       "matches": [

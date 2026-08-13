@@ -1,4 +1,4 @@
-import { isAdUrl as sharedIsAdUrl, isStreamingKeywordSite, isExternalAdUrl as sharedIsExternalAdUrl } from "./shared";
+import { isAdUrl as sharedIsAdUrl, isStreamingKeywordSite, isExternalAdUrl as sharedIsExternalAdUrl, isLocalDevelopmentUrl } from "./shared";
 
 (function() {
   // Wrappers bind page context (relative URL resolution / current page host)
@@ -16,6 +16,7 @@ import { isAdUrl as sharedIsAdUrl, isStreamingKeywordSite, isExternalAdUrl as sh
   });
 
   const isStreamingOrAdProneSite = (urlStr: string): boolean => {
+    if (isLocalDevelopmentUrl(urlStr)) return false;
     if (tabCategory === "Movie Streaming" || tabCategory === "Comic/Manga") {
       return true;
     }
@@ -96,6 +97,7 @@ import { isAdUrl as sharedIsAdUrl, isStreamingKeywordSite, isExternalAdUrl as sh
 
   // Intercept click hijacking via dynamic link clicks (capturing phase)
   window.addEventListener("click", (e: MouseEvent) => {
+    if (isLocalDevelopmentUrl(window.location.href)) return;
     const target = e.target as HTMLElement;
     if (!target) return;
 

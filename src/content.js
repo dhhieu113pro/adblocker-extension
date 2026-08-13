@@ -182,6 +182,11 @@ class AdBlockerOverlay {
     const width = img.naturalWidth || img.width || 0;
     const height = img.naturalHeight || img.height || 0;
     const url = (img.currentSrc || img.src || "").toLowerCase();
+    const alt = (img.alt || "").toLowerCase();
+    const parentClasses = img.closest("header, nav, .logo, .logo-brand, #nav")?.className?.toString().toLowerCase() || "";
+
+    // Do not classify site branding or navigation images as ads.
+    if (alt.includes("logo") || url.includes("/logo") || parentClasses.includes("logo")) return false;
 
     if (width > 0 && height > 0) {
       const ratio = width / height;
@@ -298,6 +303,8 @@ class AdBlockerOverlay {
   scanVideos() {
     if (!this.autoHideAds) return;
 
+    this.scanPlayStreamAdLayers();
+
     const videos = document.querySelectorAll("video");
     videos.forEach((video) => {
       if (this.processedImages.has(video)) return;
@@ -332,6 +339,22 @@ class AdBlockerOverlay {
         }
         parent = parent.parentElement;
       }
+    });
+  }
+
+  scanPlayStreamAdLayers() {
+    const adLayers = document.querySelectorAll(
+      '[id^="ps-ad-player-player-container"], [id^="ps-ad-player-display-container"], ' +
+      '[id^="ps-ad-player-controller"], iframe[title="Advertisement"]'
+    );
+
+    adLayers.forEach((layer) => {
+      if (layer.dataset.webllmAdHidden === "true") return;
+
+      // The ad player layers are injected after the content video and can be
+      // added without creating a new video element for our scanner to process.
+      this.hideElement(layer);
+      layer.dataset.webllmAdHidden = "true";
     });
   }
 
@@ -429,6 +452,28 @@ class AdBlockerOverlay {
 
   scanImages() {
     this.scanIframes();
+    // Some sites render their banner container before the lazy image is
+    // complete. Hide the known ad slot immediately instead of waiting for
+    // image classification.
+    if (this.autoHideAds) {
+      const directAdSlots = document.querySelectorAll(
+        '#top-fish, [id*="top-fish"], [class*="ads-banner"]'
+      );
+      directAdSlots.forEach((slot) => {
+        if (slot.dataset.webllmAdHidden === "true") return;
+        const image = slot.querySelector("img");
+        if (image) {
+          this.hideAd(image, {
+            isAd: true,
+            confidence: 99,
+            method: "Known ad slot detector",
+            reasons: ["Known ad banner container"],
+          });
+        } else {
+          this.hideElement(slot);
+        }
+      });
+    }
     const images = Array.from(document.querySelectorAll("img"));
     images.forEach((img) => {
       if (this.processedImages.has(img)) return;
@@ -555,6 +600,11 @@ class AdBlockerOverlay {
     for (let i = 0; i < 8 && curr && curr.parentElement && curr.parentElement !== document.body; i++) {
       const parent = curr.parentElement;
       const cls = (parent.className || "").toString().toLowerCase();
+      const id = (parent.id || "").toLowerCase();
+      if (parent.matches?.("header, nav") || id === "nav" || /(^|[-_ ])(header|navigation|nav)([-_ ]|$)/.test(cls)) {
+        curr = parent;
+        continue;
+      }
       const style = window.getComputedStyle(parent);
       if (
         cls.includes("fixed") ||

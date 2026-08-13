@@ -1,4 +1,4 @@
-import { isAdUrl, isExternalAdUrl, isStreamingKeywordSite, AD_DOMAINS } from "./shared";
+import { isAdUrl, isExternalAdUrl, isStreamingKeywordSite, isLocalDevelopmentUrl, AD_DOMAINS } from "./shared";
 
 const tabBlockedCounts = new Map<number, number>();
 const tabCategories = new Map<number, { category: string, confidence: number }>();
@@ -44,11 +44,15 @@ const CLIP_CACHE_MAX = 500;
 
 let clipCache = new Map<string, { label: string; score: number; aiConfidence: number; isAd: boolean; ts: number }>();
 let clipCacheLoaded = false;
+let clipCacheLoadPromise: Promise<void> | undefined;
 let clipCacheSaveTimer: number | undefined;
 const inFlightClassify = new Map<string, Promise<any>>();
 
 async function loadClipCache() {
   if (clipCacheLoaded) return;
+  if (clipCacheLoadPromise) return clipCacheLoadPromise;
+
+  clipCacheLoadPromise = (async () => {
   try {
     const data = await chrome.storage.local.get(CLIP_CACHE_KEY);
     if (data && data[CLIP_CACHE_KEY]) {
@@ -56,6 +60,13 @@ async function loadClipCache() {
     }
   } catch {}
   clipCacheLoaded = true;
+  })();
+
+  try {
+    await clipCacheLoadPromise;
+  } finally {
+    clipCacheLoadPromise = undefined;
+  }
 }
 
 function getCachedClip(imageUrl?: string) {
@@ -218,6 +229,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "detectAd") {
     (async () => {
       try {
+        // The service worker may receive the first page scan before the
+        // fire-and-forget startup load above has completed. Always wait for
+        // persisted results before deciding to run a new AI classification.
+        await loadClipCache();
+
         const heuristics = analyzeAdHeuristics(
           message.imageUrl, 
           message.width, 
@@ -394,6 +410,7 @@ function analyzeAdHeuristics(
 }
 
 function isStreamingOrAdProneSite(urlStr: string, tabId?: number): boolean {
+  if (isLocalDevelopmentUrl(urlStr)) return false;
   if (tabId !== undefined) {
     const data = tabCategories.get(tabId);
     if (data && (data.category === "Movie Streaming" || data.category === "Comic/Manga")) {

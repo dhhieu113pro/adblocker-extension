@@ -20,10 +20,11 @@ export const HARD_AD_NETWORKS = new Set([
   "populartooth.com", "adm.centraladtool.com", "adsmicro.com", "adx.admicro.vn"
 ]);
 const HARD_AD_NETWORK_RE = /populartooth|admicro|adnzone|admzone|adxzone|sspp|adsnano/i;
+const HARD_AD_NETWORK_URL_RE = /adcenter\.cx|\/storage\/ads\//i;
 
 export function isHardAdNetwork(url?: string): boolean {
   if (!url) return false;
-  if (HARD_AD_NETWORK_RE.test(url)) return true;
+  if (HARD_AD_NETWORK_RE.test(url) || HARD_AD_NETWORK_URL_RE.test(url)) return true;
   try {
     return HARD_AD_NETWORKS.has(new URL(url).hostname.replace(/^www\./, ""));
   } catch {
@@ -190,5 +191,15 @@ export function isExternalAdUrl(targetUrlStr: string, sourceUrlStr: string): boo
     return true; // Different domain & not whitelisted -> Block!
   } catch (e) {
     return true; // Block on parse errors for maximum safety
+  }
+}
+
+export function isLocalDevelopmentUrl(urlStr: string): boolean {
+  try {
+    const hostname = new URL(urlStr).hostname.toLowerCase();
+    return hostname === "localhost" || hostname === "127.0.0.1" ||
+      hostname === "0.0.0.0" || hostname === "::1";
+  } catch {
+    return false;
   }
 }

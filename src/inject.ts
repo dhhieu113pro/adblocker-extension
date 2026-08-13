@@ -1,10 +1,9 @@
-import { isAdUrl as sharedIsAdUrl, isStreamingKeywordSite, isExternalAdUrl as sharedIsExternalAdUrl, isLocalDevelopmentUrl } from "./shared";
+import { isAdUrl as sharedIsAdUrl, isStreamingKeywordSite, isLocalDevelopmentUrl } from "./shared";
 
 (function() {
   // Wrappers bind page context (relative URL resolution / current page host)
     const isAdUrl = (rawUrl: any, aggressive = false): boolean =>
       sharedIsAdUrl(rawUrl, window.location.href, aggressive);
-  const isExternalAdUrl = (url: any): boolean => sharedIsExternalAdUrl(url.toString(), window.location.href);
 
   let tabCategory = "General Site";
   if ((window as any).__adblockerTabCategory) {
@@ -28,7 +27,7 @@ import { isAdUrl as sharedIsAdUrl, isStreamingKeywordSite, isExternalAdUrl as sh
     const isStreaming = isStreamingOrAdProneSite(window.location.href);
     // If it's a streaming site, strictly block any external URL (except whitelist/same-brand)
     // If it's a normal site, only block if the target URL explicitly matches known ad domains
-    return isStreaming && (isAdUrl(targetUrl, true) || isExternalAdUrl(targetUrl));
+    return isStreaming && isAdUrl(targetUrl, true);
   };
 
   // Hook window.open and return Proxy to catch blank window locations
@@ -88,7 +87,7 @@ import { isAdUrl as sharedIsAdUrl, isStreamingKeywordSite, isExternalAdUrl as sh
       set(val) {
         console.warn("[AdBlocker] Intercepted and rejected website attempt to override window.open.");
       },
-      configurable: false
+      configurable: true
     });
   } catch (e) {
     // Fallback if defineProperty fails (e.g. already locked)
@@ -159,9 +158,7 @@ import { isAdUrl as sharedIsAdUrl, isStreamingKeywordSite, isExternalAdUrl as sh
 
       // Block programmatic (untrusted) clicks going to external origins
       // On streaming sites, check strict non-origin block. On normal sites, check keyword list block.
-      const shouldBlockUntrusted = isStreaming 
-        ? isExternalAdUrl(href)
-        : isAdUrl(href);
+      const shouldBlockUntrusted = isAdUrl(href, isStreaming);
 
       if (!e.isTrusted && shouldBlockUntrusted) {
         console.warn("[AdBlocker] Hook blocked untrusted programmatic click redirection to:", href);

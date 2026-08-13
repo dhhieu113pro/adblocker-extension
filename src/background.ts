@@ -47,6 +47,8 @@ let clipCacheLoaded = false;
 let clipCacheLoadPromise: Promise<void> | undefined;
 let clipCacheSaveTimer: number | undefined;
 const inFlightClassify = new Map<string, Promise<any>>();
+const lastCommittedUrls = new Map<number, string>();
+const categoryCache = new Map<string, { category: string; confidence: number }>();
 
 async function loadClipCache() {
   if (clipCacheLoaded) return;
@@ -58,7 +60,9 @@ async function loadClipCache() {
     if (data && data[CLIP_CACHE_KEY]) {
       clipCache = new Map(Object.entries(data[CLIP_CACHE_KEY]));
     }
-  } catch {}
+  } catch (err) {
+    console.warn("[AdBlocker] Failed to load CLIP cache:", err);
+  }
   clipCacheLoaded = true;
   })();
 
@@ -91,9 +95,8 @@ function setCachedClip(imageUrl: string, entry: { label: string; score: number; 
   clipCache.set(imageUrl, entry);
   clearTimeout(clipCacheSaveTimer);
   clipCacheSaveTimer = setTimeout(() => {
-    try {
-      chrome.storage.local.set({ [CLIP_CACHE_KEY]: Object.fromEntries(clipCache) });
-    } catch {}
+    chrome.storage.local.set({ [CLIP_CACHE_KEY]: Object.fromEntries(clipCache) })
+      .catch((err) => console.warn("[AdBlocker] Failed to save CLIP cache:", err));
   }, 500);
 }
 
@@ -134,6 +137,7 @@ async function classifyAdWithCache(message: any, heuristics: any) {
 }
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  if (changeInfo.url) lastCommittedUrls.set(tabId, changeInfo.url);
   if (changeInfo.status === "loading") {
     tabBlockedCounts.set(tabId, 0);
     tabCategories.delete(tabId);
@@ -144,6 +148,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
 chrome.tabs.onRemoved.addListener((tabId) => {
   tabBlockedCounts.delete(tabId);
   tabCategories.delete(tabId);
+  lastCommittedUrls.delete(tabId);
 });
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -488,7 +493,7 @@ chrome.webNavigation.onBeforeNavigate.addListener((details) => {
   chrome.tabs.get(details.tabId, (tab) => {
     if (chrome.runtime.lastError || !tab || !tab.url) return;
     
-    const sourceUrl = tab.url;
+    const sourceUrl = lastCommittedUrls.get(details.tabId) || tab.url;
     if (sourceUrl.startsWith("chrome://") || sourceUrl.startsWith("chrome-extension://") || sourceUrl === "about:blank") {
       return;
     }
@@ -518,6 +523,7 @@ chrome.webNavigation.onCompleted.addListener((details) => {
   
   const tabId = details.tabId;
   const url = details.url;
+  if (isLocalDevelopmentUrl(url)) return;
   
   if (url.startsWith("chrome://") || url.startsWith("chrome-extension://") || url === "about:blank") {
     return;
@@ -587,16 +593,21 @@ chrome.webNavigation.onCompleted.addListener((details) => {
             const topMatch = results[0];
             const confidence = Math.round(topMatch.score * 100);
 
-            let category = "General Site";
+            const cachedCategory = categoryCache.get(url);
+            let category = cachedCategory?.category || "General Site";
+            let finalConfidence = cachedCategory?.confidence || confidence;
+            if (!cachedCategory) {
             if (topMatch.label.includes("streaming")) category = "Movie Streaming";
             else if (topMatch.label.includes("manga") || topMatch.label.includes("comic")) category = "Comic/Manga";
             else if (topMatch.label.includes("news")) category = "News/Articles";
             else if (topMatch.label.includes("programming")) category = "Developer Page";
             else if (topMatch.label.includes("shopping")) category = "E-Commerce";
             else if (topMatch.label.includes("search")) category = "Search Engine";
+              categoryCache.set(url, { category, confidence });
+            }
 
-            console.log(`[AdBlocker] AI Classified tab ${tabId} (${url}) as: ${category} (${confidence}% confidence)`);
-            tabCategories.set(tabId, { category, confidence });
+            console.log(`[AdBlocker] AI Classified tab ${tabId} (${url}) as: ${category} (${finalConfidence}% confidence)`);
+            tabCategories.set(tabId, { category, confidence: finalConfidence });
 
             // Push category directly to inject.ts MAIN world context using scripting API
             chrome.scripting.executeScript({

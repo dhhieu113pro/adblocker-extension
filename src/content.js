@@ -10,12 +10,13 @@ class AdBlockerOverlay {
     this.adCheckQueue = [];
     this.adCheckProcessing = false;
     this.adCheckUrls = new Set();
+    this.scanTimer = null;
     this.init();
   }
 
   async init() {
     this.injectGlobalStyles();
-    this.loadSettings();
+    await this.loadSettings();
     this.scanImages();
     this.scanVideos();
     this.setupMutationObserver();
@@ -55,22 +56,33 @@ class AdBlockerOverlay {
     (document.head || document.documentElement).appendChild(style);
   }
 
-  loadSettings() {
-    chrome.storage?.sync?.get(["autoHideAds"], (res) => {
-      if (res.autoHideAds !== undefined) {
-        this.autoHideAds = res.autoHideAds;
-      }
-    });
+  async loadSettings() {
+    try {
+      const res = await chrome.storage?.sync?.get(["autoHideAds"]);
+      if (res?.autoHideAds !== undefined) this.autoHideAds = res.autoHideAds;
+    } catch (err) {
+      console.warn("[AdBlocker] Failed to load settings:", err);
+    }
 
     chrome.storage?.onChanged?.addListener((changes, area) => {
       if (area === "sync" && changes.autoHideAds) {
         this.autoHideAds = changes.autoHideAds.newValue;
         if (this.autoHideAds) {
-          this.scanImages();
-                  this.scanVideos();
-                }
+          this.scheduleScan();
+        }
       }
     });
+  }
+
+  scheduleScan() {
+    if (this.scanTimer) return;
+    this.scanTimer = setTimeout(() => {
+      this.scanTimer = null;
+      if (this.autoHideAds) {
+        this.scanImages();
+        this.scanVideos();
+      }
+    }, 150);
   }
 
   initMessageListener() {
@@ -164,11 +176,8 @@ class AdBlockerOverlay {
           }
         }
       }
-      if (hasNewNodes) {
-        this.scanClickjackingOverlays();
-      }
-      this.scanImages();
-            this.scanVideos();
+      if (hasNewNodes) this.scanClickjackingOverlays();
+      this.scheduleScan();
     });
     observer.observe(document.body || document.documentElement, {
       childList: true,
@@ -332,7 +341,8 @@ class AdBlockerOverlay {
       for (let i = 0; i < 4 && parent && parent !== document.body; i++) {
         const pId = (parent.id || "").toLowerCase();
         const pCls = (parent.className || "").toString().toLowerCase();
-        if (pId.startsWith("ps-video-slot") || /(playstream|adnzone|admzone|sspp)/.test(pId + " " + pCls)) {
+        if (/(playstream|adnzone|admzone|sspp)/.test(pId + " " + pCls) &&
+            !pId.startsWith("ps-video-slot")) {
           this.processedImages.add(video);
                   this.hideAdVideo(video, `Video inside ad container (${parent.id || pCls})`, parent);
           return;

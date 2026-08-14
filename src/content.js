@@ -11,6 +11,9 @@ class AdBlockerOverlay {
     this.adCheckProcessing = false;
     this.adCheckUrls = new Set();
     this.scanTimer = null;
+    this.jwMutedVideos = new Map();
+    this.jwSkipTimer = null;
+    this.jwClickedButtons = new WeakSet();
     this.init();
   }
 
@@ -22,6 +25,7 @@ class AdBlockerOverlay {
     this.setupMutationObserver();
     this.initMessageListener();
     this.setupContextMenuTracker();
+    this.setupJwAdSkipAutomation();
     setInterval(() => this.scanClickjackingOverlays(), 1000);
   }
 
@@ -82,6 +86,55 @@ class AdBlockerOverlay {
         this.scanImages();
         this.scanVideos();
       }
+    }, 150);
+  }
+
+  setupJwAdSkipAutomation() {
+    const run = () => this.handleJwAdSkip();
+    this.jwSkipTimer = setInterval(run, 250);
+    run();
+  }
+
+  handleJwAdSkip() {
+    if (!this.autoHideAds) return;
+
+    const skipButtons = Array.from(document.querySelectorAll(".jw-skip[role='button'], .jw-skip"));
+    const countdownButton = skipButtons.find((button) => {
+      const label = (button.getAttribute("aria-label") || button.textContent || "").toLowerCase();
+      return label.includes("bỏ qua quảng cáo sau") || label.includes("skip ad in");
+    });
+
+    if (countdownButton) {
+      document.querySelectorAll("video").forEach((video) => {
+        if (!this.jwMutedVideos.has(video)) {
+          this.jwMutedVideos.set(video, { muted: video.muted, volume: video.volume });
+        }
+        video.muted = true;
+      });
+      return;
+    }
+
+    const readyButton = skipButtons.find((button) => {
+      const label = (button.getAttribute("aria-label") || "").toLowerCase();
+      const text = (button.textContent || "").trim().toLowerCase();
+      return button.classList.contains("jw-skippable") &&
+        (label === "bỏ qua" || label === "skip ad" || label === "skip" ||
+          text === "bỏ qua" || text === "skip ad" || text === "skip");
+    });
+
+    if (!readyButton || this.jwClickedButtons.has(readyButton)) return;
+    this.jwClickedButtons.add(readyButton);
+    readyButton.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window }));
+    readyButton.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, view: window }));
+    readyButton.click();
+
+    window.setTimeout(() => {
+      this.jwMutedVideos.forEach((state, video) => {
+        if (!video.isConnected) return;
+        video.muted = state.muted;
+        video.volume = state.volume;
+      });
+      this.jwMutedVideos.clear();
     }, 150);
   }
 
@@ -177,13 +230,36 @@ class AdBlockerOverlay {
         }
       }
       if (hasNewNodes) this.scanClickjackingOverlays();
+      if (hasNewNodes) this.scanKnownAdSlots();
       this.scheduleScan();
     });
     observer.observe(document.body || document.documentElement, {
       childList: true,
       subtree: true,
       attributes: true,
-      attributeFilter: ["style"],
+      attributeFilter: ["style", "class", "src", "data-src", "data-lazy-src"],
+    });
+  }
+
+  scanKnownAdSlots() {
+    if (!this.autoHideAds) return;
+    const slots = document.querySelectorAll(
+      '#top-fish, #top-banner, [id*="top-fish"], [id*="top-banner"], [class*="ads-banner"]'
+    );
+    slots.forEach((slot) => {
+      if (slot.dataset.webllmAdHidden === "true") return;
+      const image = slot.querySelector("img");
+      if (image) {
+        const src = image.currentSrc || image.src || image.getAttribute("data-src") || "";
+        if (src) {
+          this.hideAd(image, {
+            isAd: true,
+            confidence: 99,
+            method: "Known ad slot detector",
+            reasons: ["Known ad banner container"],
+          });
+        }
+      }
     });
   }
 
@@ -465,25 +541,7 @@ class AdBlockerOverlay {
     // Some sites render their banner container before the lazy image is
     // complete. Hide the known ad slot immediately instead of waiting for
     // image classification.
-    if (this.autoHideAds) {
-      const directAdSlots = document.querySelectorAll(
-        '#top-fish, [id*="top-fish"], [class*="ads-banner"]'
-      );
-      directAdSlots.forEach((slot) => {
-        if (slot.dataset.webllmAdHidden === "true") return;
-        const image = slot.querySelector("img");
-        if (image) {
-          this.hideAd(image, {
-            isAd: true,
-            confidence: 99,
-            method: "Known ad slot detector",
-            reasons: ["Known ad banner container"],
-          });
-        } else {
-          this.hideElement(slot);
-        }
-      });
-    }
+    this.scanKnownAdSlots();
     const images = Array.from(document.querySelectorAll("img"));
     images.forEach((img) => {
       if (this.processedImages.has(img)) return;

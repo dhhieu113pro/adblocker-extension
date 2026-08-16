@@ -6,6 +6,8 @@ class AdBlockerOverlay {
     this.processedImages = new WeakSet();
     this.detectedAdsMap = new Map();
     this.autoHideAds = true;
+    this.siteDisabled = false;
+    this.allowedAds = new Set();
     this.lastRightClickedElement = null;
     this.adCheckQueue = [];
     this.adCheckProcessing = false;
@@ -63,8 +65,11 @@ class AdBlockerOverlay {
 
   async loadSettings() {
     try {
-      const res = await chrome.storage?.sync?.get(["autoHideAds"]);
+      const site = window.location.hostname.toLowerCase();
+      const res = await chrome.storage?.sync?.get(["autoHideAds", "disabledSites", "allowedAds"]);
       if (res?.autoHideAds !== undefined) this.autoHideAds = res.autoHideAds;
+      this.siteDisabled = Array.isArray(res?.disabledSites) && res.disabledSites.includes(site);
+      this.allowedAds = new Set(Array.isArray(res?.allowedAds) ? res.allowedAds : []);
     } catch (err) {
       console.warn("[AdBlocker] Failed to load settings:", err);
     }
@@ -76,14 +81,33 @@ class AdBlockerOverlay {
           this.scheduleScan();
         }
       }
+      if (area === "sync" && changes.disabledSites) {
+        const disabled = (changes.disabledSites.newValue || []).includes(window.location.hostname.toLowerCase());
+        this.siteDisabled = disabled;
+        if (disabled) this.disableSiteBlocking();
+        else {
+          this.processedImages = new WeakSet();
+          this.scheduleScan();
+        }
+      }
+      if (area === "sync" && changes.allowedAds) {
+        this.allowedAds = new Set(changes.allowedAds.newValue || []);
+      }
     });
+  }
+
+  disableSiteBlocking() {
+    this.detectedAdsMap.forEach((ad) => this.unhideElement(ad.targetElement));
+    this.detectedAdsMap.clear();
+    this.adCheckQueue = [];
+    this.adCheckUrls.clear();
   }
 
   scheduleScan() {
     if (this.scanTimer) return;
     this.scanTimer = setTimeout(() => {
       this.scanTimer = null;
-      if (this.autoHideAds) {
+      if (this.autoHideAds && !this.siteDisabled) {
         this.scanImages();
         this.scanVideos();
       }
@@ -97,7 +121,7 @@ class AdBlockerOverlay {
   }
 
   handleJwAdSkip() {
-    if (!this.autoHideAds) return;
+    if (!this.autoHideAds || this.siteDisabled) return;
 
     const skipButtons = Array.from(document.querySelectorAll(".jw-skip[role='button'], .jw-skip"));
     const countdownButton = skipButtons.find((button) => {
@@ -160,13 +184,17 @@ class AdBlockerOverlay {
       if (message.type === "toggleAdVisibility") {
         const adInfo = this.detectedAdsMap.get(message.adId);
         if (adInfo && adInfo.targetElement) {
+          const adUrl = adInfo.url || "";
           if (message.hide) {
+            this.allowedAds.delete(adUrl);
             this.hideElement(adInfo.targetElement);
             adInfo.isHidden = true;
           } else {
+            this.allowedAds.add(adUrl);
             this.unhideElement(adInfo.targetElement);
             adInfo.isHidden = false;
           }
+          chrome.storage.sync.set({ allowedAds: Array.from(this.allowedAds) });
           sendResponse({ success: true, isHidden: adInfo.isHidden });
         } else {
           sendResponse({ success: false, error: "Ad element not found" });
@@ -243,7 +271,7 @@ class AdBlockerOverlay {
   }
 
   scanKnownAdSlots() {
-    if (!this.autoHideAds) return;
+    if (!this.autoHideAds || this.siteDisabled) return;
     const slots = document.querySelectorAll(AD_CONTAINER_SELECTORS.join(", ") + ', [id^="adbro"], [class^="adbro-"]');
     slots.forEach((slot) => {
       if (slot.dataset.webllmAdHidden === "true") return;
@@ -263,7 +291,7 @@ class AdBlockerOverlay {
       const image = slot.querySelector("img");
       if (image) {
         const src = image.currentSrc || image.src || image.getAttribute("data-src") || "";
-        if (src) {
+        if (src && !this.allowedAds.has(src)) {
           this.hideAd(image, {
             isAd: true,
             confidence: 99,
@@ -398,7 +426,7 @@ class AdBlockerOverlay {
   }
 
   scanVideos() {
-    if (!this.autoHideAds) return;
+    if (!this.autoHideAds || this.siteDisabled) return;
 
     this.scanPlayStreamAdLayers();
 
@@ -412,6 +440,7 @@ class AdBlockerOverlay {
 
       // Strongest signal: ad player video explicitly labelled as an ad
       if (containsAdTitle) {
+        if (this.allowedAds.has(video.currentSrc || video.src)) return;
         this.processedImages.add(video);
         this.hideAdVideo(video, "Video title indicates advertisement");
         return;
@@ -419,6 +448,7 @@ class AdBlockerOverlay {
 
       // PlayStream / ad-network video players
       if (isHardAdNetwork(src)) {
+        if (this.allowedAds.has(src)) return;
         this.processedImages.add(video);
         this.hideAdVideo(video, "Video served from ad network");
         return;
@@ -549,6 +579,7 @@ class AdBlockerOverlay {
   }
 
   scanImages() {
+    if (this.siteDisabled) return;
     this.scanIframes();
     // Some sites render their banner container before the lazy image is
     // complete. Hide the known ad slot immediately instead of waiting for
@@ -638,6 +669,7 @@ class AdBlockerOverlay {
   // #4 - Serial, de-duped queue to throttle burst scans
   enqueueAdCheck(img, msg) {
     if (!msg.imageUrl) return;
+    if (this.allowedAds.has(msg.imageUrl)) return;
     if (this.adCheckUrls.has(msg.imageUrl)) return;
 
     this.adCheckUrls.add(msg.imageUrl);

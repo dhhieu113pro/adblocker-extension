@@ -6,6 +6,17 @@ import { isAdUrl as sharedIsAdUrl, isStreamingKeywordSite, isLocalDevelopmentUrl
       sharedIsAdUrl(rawUrl, window.location.href, aggressive);
 
   let tabCategory = "General Site";
+  let siteBlockingEnabled = true;
+  try {
+    chrome.storage.sync.get(["disabledSites"], (res) => {
+      siteBlockingEnabled = !(res.disabledSites || []).includes(window.location.hostname.toLowerCase());
+    });
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === "sync" && changes.disabledSites) {
+        siteBlockingEnabled = !(changes.disabledSites.newValue || []).includes(window.location.hostname.toLowerCase());
+      }
+    });
+  } catch {}
   if ((window as any).__adblockerTabCategory) {
     tabCategory = (window as any).__adblockerTabCategory;
   }
@@ -15,6 +26,7 @@ import { isAdUrl as sharedIsAdUrl, isStreamingKeywordSite, isLocalDevelopmentUrl
   });
 
   const isStreamingOrAdProneSite = (urlStr: string): boolean => {
+    if (!siteBlockingEnabled) return false;
     if (isLocalDevelopmentUrl(urlStr)) return false;
     if (tabCategory === "Movie Streaming" || tabCategory === "Comic/Manga") {
       return true;

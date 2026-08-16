@@ -3,6 +3,8 @@ import { STREAMING_KEYWORDS, COMIC_KEYWORDS } from "./shared";
 document.addEventListener("DOMContentLoaded", () => {
   const autoHideToggle = document.getElementById("auto-hide-toggle") as HTMLInputElement;
   const visionModelSelect = document.getElementById("vision-model-select") as HTMLSelectElement;
+  const siteBlockToggle = document.getElementById("site-block-toggle") as HTMLInputElement;
+  const siteBlockDesc = document.getElementById("site-block-desc") as HTMLElement;
   const adListContainer = document.getElementById("ad-list") as HTMLElement;
   const emptyState = document.getElementById("empty-ads-state") as HTMLElement;
   const adCountBadge = document.getElementById("ad-count-badge") as HTMLElement;
@@ -28,6 +30,38 @@ document.addEventListener("DOMContentLoaded", () => {
   visionModelSelect.addEventListener("change", () => {
     chrome.storage.sync.set({ visionModel: visionModelSelect.value });
   });
+
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    const activeTab = tabs[0];
+    const site = getSiteKey(activeTab?.url);
+    if (!site) {
+      siteBlockToggle.disabled = true;
+      siteBlockDesc.textContent = "Unavailable on this page";
+      return;
+    }
+    siteBlockDesc.textContent = site;
+    chrome.storage.sync.get(["disabledSites"], (res) => {
+      siteBlockToggle.checked = !(res.disabledSites || []).includes(site);
+    });
+    siteBlockToggle.addEventListener("change", () => {
+      chrome.storage.sync.get(["disabledSites"], (current) => {
+        const sites = new Set<string>(current.disabledSites || []);
+        if (siteBlockToggle.checked) sites.delete(site);
+        else sites.add(site);
+        chrome.storage.sync.set({ disabledSites: Array.from(sites) });
+      });
+    });
+  });
+
+  function getSiteKey(url?: string) {
+    try {
+      const parsed = new URL(url || "");
+      if (!["http:", "https:"].includes(parsed.protocol)) return "";
+      return parsed.hostname.toLowerCase();
+    } catch {
+      return "";
+    }
+  }
 
   loadTabAds();
   loadAdHistory();

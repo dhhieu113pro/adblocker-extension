@@ -13,7 +13,7 @@
         <span class="logo-icon">🛡️</span>
         <h1>AI Vision Ad Blocker</h1>
       </div>
-      <span class="version">v1.0.10</span>
+      <span class="version">v1.0.11</span>
     </header>
 
     <div id="ai-category-badge" style="display: none; align-items: center; gap: 6px; font-size: 11px; color: var(--text-secondary); background: var(--bg-secondary); padding: 6px 12px; border-radius: 8px; border: 1px solid var(--border-color); margin-bottom: 2px;">
@@ -42,6 +42,16 @@
             <option value="clip">CLIP Vision (recommended)</option>
             <option value="mobilenet">MobileNetV4 Fast (experimental)</option>
           </select>
+        </div>
+        <div class="setting-row">
+          <div class="setting-info">
+            <span class="setting-title">Block Ads on This Site</span>
+            <span class="setting-desc" id="site-block-desc">Loading current site…</span>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="site-block-toggle" checked />
+            <span class="toggle-slider"></span>
+          </label>
         </div>
       </div>
 

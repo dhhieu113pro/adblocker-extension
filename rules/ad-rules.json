@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "domains": [
+    "doubleclick.net",
+    "googlesyndication.com",
+    "googleadservices.com",
+    "adsterra.com",
+    "popads.net",
+    "popcash.net",
+    "exoclick.com",
+    "juicyads.com",
+    "propellerads.com",
+    "taboola.com",
+    "outbrain.com",
+    "i9.top",
+    "colatv.vn",
+    "vsbet.com",
+    "nhacai.com",
+    "rg.pro.vn",
+    "adcenter.cx"
+  ],
+  "urlKeywords": [
+    "adserver",
+    "doubleclick",
+    "googlesyndication",
+    "adcenter",
+    "sponsored",
+    "advertisement",
+    "popunder",
+    "clickunder"
+  ],
+  "containerSelectors": [
+    "#adbro",
+    "#top-banner",
+    "#top-fish",
+    "[id*='top-banner']",
+    "[id*='top-fish']",
+    "[class*='ads-banner']",
+    "[id^='ps-ad-player-']"
+  ]
+}

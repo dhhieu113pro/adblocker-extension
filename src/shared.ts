@@ -5,6 +5,65 @@ export const AD_DOMAINS = new Set([
   "juicyads.com", "propellerads.com", "taboola.com", "outbrain.com",
   "i9.top", "colatv.vn", "vsbet.com", "nhacai.com", "rg.pro.vn"
 ]);
+const REMOTE_RULES_URL = "https://raw.githubusercontent.com/dhhieu113pro/adblocker-extension/main/rules/ad-rules.json";
+const REMOTE_RULES_CACHE_KEY = "remoteAdRules";
+const REMOTE_RULES_TTL_MS = 24 * 60 * 60 * 1000;
+export const AD_CONTAINER_SELECTORS = [
+  "#adbro", "#top-banner", "#top-fish", "[id*='top-banner']",
+  "[id*='top-fish']", "[class*='ads-banner']", "[id^='ps-ad-player-']"
+];
+let remoteRulesLoaded = false;
+
+export async function loadRemoteAdRules(): Promise<void> {
+  if (remoteRulesLoaded) return;
+  remoteRulesLoaded = true;
+  try {
+    const cached = await chrome.storage.local.get(REMOTE_RULES_CACHE_KEY);
+    const cachedRules = cached[REMOTE_RULES_CACHE_KEY];
+    if (cachedRules?.rules) applyRemoteAdRules(cachedRules.rules);
+
+    if (!cachedRules?.timestamp || Date.now() - cachedRules.timestamp >= REMOTE_RULES_TTL_MS) {
+      const response = await fetch(REMOTE_RULES_URL, { cache: "no-store" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const rules = await response.json();
+      validateRemoteAdRules(rules);
+      applyRemoteAdRules(rules);
+      await chrome.storage.local.set({
+        [REMOTE_RULES_CACHE_KEY]: { timestamp: Date.now(), rules }
+      });
+    }
+  } catch (err) {
+    console.warn("[AdBlocker] Remote ad rules unavailable; using built-in rules:", err);
+  }
+}
+
+function validateRemoteAdRules(rules: any) {
+  if (!rules || typeof rules !== "object" ||
+      !Array.isArray(rules.domains) || !Array.isArray(rules.urlKeywords) ||
+      !Array.isArray(rules.containerSelectors)) {
+    throw new Error("Invalid remote ad rules format");
+  }
+}
+
+function applyRemoteAdRules(rules: any) {
+  rules.domains.forEach((domain: any) => {
+    if (typeof domain === "string" && /^[a-z0-9.-]+$/i.test(domain)) AD_DOMAINS.add(domain.toLowerCase());
+  });
+  rules.containerSelectors.forEach((selector: any) => {
+    if (typeof selector === "string" && selector.length < 200 && !selector.includes("<")) {
+      if (!AD_CONTAINER_SELECTORS.includes(selector)) AD_CONTAINER_SELECTORS.push(selector);
+    }
+  });
+  if (Array.isArray(rules.urlKeywords)) {
+    rules.urlKeywords.forEach((keyword: any) => {
+      if (typeof keyword === "string" && keyword.length >= 3 && keyword.length < 100) {
+        REMOTE_URL_KEYWORDS.add(keyword.toLowerCase());
+      }
+    });
+  }
+}
+
+const REMOTE_URL_KEYWORDS = new Set<string>();
 
 // ---------- Domains to never flag (CDNs, infra, mainstream sites) ----------
 export const TRUSTED_DOMAINS = new Set([
@@ -131,6 +190,8 @@ export function isAdUrl(rawUrl: any, baseUrl?: string, aggressive = false): bool
 
   // 3. Suspicious path — heuristic
   if (AD_PATH_PATTERNS.some(re => re.test(url.pathname.toLowerCase()))) return true;
+
+  if ([...REMOTE_URL_KEYWORDS].some(keyword => url.href.toLowerCase().includes(keyword))) return true;
 
   // 4. Suspicious query params — heuristic
   if (AD_QUERY_PARAMS.some(p => url.search.toLowerCase().includes(p))) return true;

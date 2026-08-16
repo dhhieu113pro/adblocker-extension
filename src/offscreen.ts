@@ -6,6 +6,8 @@ env.allowRemoteModels = true;
 
 let clipClassifier: any = null;
 let isClassifierLoading = false;
+let mobileNetClassifier: any = null;
+let isMobileNetLoading = false;
 
 async function getClipClassifier() {
   if (clipClassifier) return clipClassifier;
@@ -25,13 +27,33 @@ async function getClipClassifier() {
   }
 }
 
+async function getMobileNetClassifier() {
+  if (mobileNetClassifier) return mobileNetClassifier;
+  if (isMobileNetLoading) {
+    while (isMobileNetLoading) await new Promise((r) => setTimeout(r, 100));
+    return mobileNetClassifier;
+  }
+  isMobileNetLoading = true;
+  try {
+    mobileNetClassifier = await pipeline(
+      "image-classification",
+      "Xenova/mobilenetv4_conv_small.e2400_r224_in1k"
+    );
+    return mobileNetClassifier;
+  } finally {
+    isMobileNetLoading = false;
+  }
+}
+
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.target !== "offscreen") return false;
 
   if (message.type === "clipClassifyAd") {
     (async () => {
       try {
-        const classifier = await getClipClassifier();
+        const classifier = message.model === "mobilenet"
+          ? await getMobileNetClassifier()
+          : await getClipClassifier();
         const candidate_labels = [
           "gambling advertisement banner",
           "promotional ad banner",
@@ -39,8 +61,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           "regular website photo or graphic"
         ];
 
-        const output = await classifier(message.imageDataUrl, candidate_labels);
-        sendResponse({ success: true, results: output });
+        const output = message.model === "mobilenet"
+          ? await classifier(message.imageDataUrl)
+          : await classifier(message.imageDataUrl, candidate_labels);
+        sendResponse({ success: true, results: output, model: message.model || "clip" });
       } catch (err: any) {
         console.error("[Offscreen CLIP]", err);
         sendResponse({ error: err?.message || String(err) });

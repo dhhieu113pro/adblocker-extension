@@ -14,6 +14,10 @@ An intelligent, on-device Chrome Extension that blocks advertisements using a **
 *   **CLIP Result Cache**: AI classification results are cached per image URL (7-day TTL, LRU), so repeat scans cost nothing.
 *   **Burst-Scan Queue**: Image scans are queued and debounced to keep ad-heavy pages from overwhelming the tab or the AI runtime.
 *   **Safe Iframe Hiding**: Ad iframes (such as Google Ads, Admicro, DoubleClick, etc.) are hidden safely at the element level to avoid breaking parent layouts.
+*   **Dynamic Rule Updates**: Ad domains, URL keywords, and ad-container selectors can be updated from [`rules/ad-rules.json`](rules/ad-rules.json) in this repository. Rules are cached locally for 24 hours and built-in rules remain available offline.
+*   **Selectable Vision Model**: The popup can select the reliable CLIP model or an experimental MobileNetV4 fast classifier. CLIP is the default because MobileNet currently uses general ImageNet weights rather than ad-specific fine-tuning.
+*   **CSS/HTML Ad Takeover Detection**: Detects ad creatives that render without image elements, including ADBRO, top-banner, top-fish, and PlayStream containers.
+*   **JW Player Ad Handling**: Detects JW Player ad countdowns, mutes video during the countdown, automatically clicks the enabled **Skip Ad** button, and restores the previous audio state.
 *   **Clean Page Cleanup**: Auto-collapses empty container placeholders left behind by image banner ads.
 *   **100% Local & Privacy-First**: All AI inference runs locally in your browser's offscreen WebAssembly runtime—no visual data ever leaves your device.
 
@@ -103,6 +107,22 @@ npm run build
 3.  Click **Load unpacked** (top-left corner).
 4.  Select the `dist/` directory from this project folder.
 
+### Remote ad rules
+
+The extension loads the latest rules from:
+
+```text
+https://raw.githubusercontent.com/dhhieu113pro/adblocker-extension/main/rules/ad-rules.json
+```
+
+The loader validates the response, applies cached rules when available, refreshes at most once per day, and falls back to the bundled rules if GitHub is unavailable. The remote file contains:
+
+*   Known ad domains
+*   Strong URL keywords
+*   CSS selectors for injected ad containers
+
+To publish a rule update, edit `rules/ad-rules.json`, commit it, and push it to the repository.
+
 ---
 
 ## 💡 How to Use
@@ -110,6 +130,14 @@ npm run build
 ### Automatic Ad Blocking
 *   Once loaded, the extension actively monitors the active tab. 
 *   Standard ad banners, promotional skyscrapers, and ad iframes will be blocked and hidden automatically.
+*   Dynamically injected banners and CSS-based takeover ads are rescanned when their containers, classes, or lazy-loaded URLs change.
+
+### Vision model selection
+
+Open the extension popup and choose **Vision Model**:
+
+*   **CLIP Vision**: Recommended zero-shot model for general ad classification.
+*   **MobileNetV4 Fast**: Experimental lightweight classifier. It is useful for testing fast inference, but ad-specific training is still recommended for production accuracy.
 
 ### On-Demand AI Inspector
 1.  Find any image on a website.

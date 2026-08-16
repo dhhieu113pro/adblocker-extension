@@ -84,6 +84,16 @@ body {
   gap: 2px;
 }
 
+.model-select {
+  max-width: 155px;
+  padding: 6px 8px;
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-size: 11px;
+}
+
 .setting-title {
   font-weight: 600;
   color: var(--text-primary);

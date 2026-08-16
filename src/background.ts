@@ -1,4 +1,4 @@
-import { isAdUrl, isExternalAdUrl, isStreamingKeywordSite, isLocalDevelopmentUrl, AD_DOMAINS } from "./shared";
+import { isAdUrl, isExternalAdUrl, isStreamingKeywordSite, isLocalDevelopmentUrl, AD_DOMAINS, loadRemoteAdRules } from "./shared";
 
 const tabBlockedCounts = new Map<number, number>();
 const tabCategories = new Map<number, { category: string, confidence: number }>();
@@ -36,6 +36,7 @@ async function setupDnrRules() {
 }
 
 setupDnrRules();
+loadRemoteAdRules().then(() => setupDnrRules());
 
 // --- Per-image CLIP result cache (#3) ---
 const CLIP_CACHE_KEY = "webllmClipCache";
@@ -104,21 +105,23 @@ loadClipCache();
 
 // Coalesces concurrent classify calls for the same image and writes the cache.
 async function classifyAdWithCache(message: any, heuristics: any) {
-  if (message.imageUrl) {
-    const pending = inFlightClassify.get(message.imageUrl);
+  const cacheKey = message.model === "mobilenet" ? "" : message.imageUrl;
+  if (cacheKey) {
+    const pending = inFlightClassify.get(cacheKey);
     if (pending) return pending;
   }
 
   const p = chrome.runtime.sendMessage({
     type: "clipClassifyAd",
     imageDataUrl: message.imageDataUrl,
+    model: message.model,
     target: "offscreen",
   }).then((res: any) => {
-    if (res?.results && Array.isArray(res.results) && res.results.length > 0 && message.imageUrl) {
+    if (res?.results && Array.isArray(res.results) && res.results.length > 0 && cacheKey) {
       const top = res.results[0];
       const aiConfidence = Math.round(top.score * 100);
       const isAdFromAI = top.label.includes("advertisement") || top.label.includes("banner");
-      setCachedClip(message.imageUrl, {
+      setCachedClip(cacheKey, {
         label: top.label,
         score: top.score,
         aiConfidence: Math.max(aiConfidence, heuristics.confidence),
@@ -129,9 +132,9 @@ async function classifyAdWithCache(message: any, heuristics: any) {
     return res;
   }).catch(() => undefined);
 
-  if (message.imageUrl) {
-    inFlightClassify.set(message.imageUrl, p);
-    p.then(() => inFlightClassify.delete(message.imageUrl));
+  if (cacheKey) {
+    inFlightClassify.set(cacheKey, p);
+    p.then(() => inFlightClassify.delete(cacheKey));
   }
   return p;
 }
@@ -238,6 +241,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         // fire-and-forget startup load above has completed. Always wait for
         // persisted results before deciding to run a new AI classification.
         await loadClipCache();
+        const modelSettings = await chrome.storage.sync.get("visionModel");
+        const selectedModel = modelSettings.visionModel || "clip";
 
         const heuristics = analyzeAdHeuristics(
           message.imageUrl, 
@@ -261,7 +266,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
         if (message.imageDataUrl) {
                   // #3 - Serve from cache before touching the ~350MB CLIP model
-                  const cached = getCachedClip(message.imageUrl);
+                  const cached = selectedModel === "clip" ? getCachedClip(message.imageUrl) : undefined;
                   if (cached) {
                     sendResponse({
                       success: true,
@@ -277,7 +282,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                   }
 
                   await ensureOffscreenDocument();
-                  const aiResult = await classifyAdWithCache(message, heuristics);
+                  const aiResult = await classifyAdWithCache({ ...message, model: selectedModel }, heuristics);
 
                   if (aiResult?.results && Array.isArray(aiResult.results)) {
                     const topResult = aiResult.results[0];

@@ -1,5 +1,5 @@
 // AI Vision & Heuristic Ad Blocker Content Script
-import { isHardAdNetwork } from "./shared";
+import { isHardAdNetwork, AD_CONTAINER_SELECTORS, loadRemoteAdRules } from "./shared";
 
 class AdBlockerOverlay {
   constructor() {
@@ -20,6 +20,7 @@ class AdBlockerOverlay {
   async init() {
     this.injectGlobalStyles();
     await this.loadSettings();
+    await loadRemoteAdRules();
     this.scanImages();
     this.scanVideos();
     this.setupMutationObserver();
@@ -243,11 +244,22 @@ class AdBlockerOverlay {
 
   scanKnownAdSlots() {
     if (!this.autoHideAds) return;
-    const slots = document.querySelectorAll(
-      '#top-fish, #top-banner, [id*="top-fish"], [id*="top-banner"], [class*="ads-banner"]'
-    );
+    const slots = document.querySelectorAll(AD_CONTAINER_SELECTORS.join(", ") + ', [id^="adbro"], [class^="adbro-"]');
     slots.forEach((slot) => {
       if (slot.dataset.webllmAdHidden === "true") return;
+
+      const id = (slot.id || "").toLowerCase();
+      const className = (slot.className || "").toString().toLowerCase();
+      const isAdbroRoot = id === "adbro" || id.startsWith("adbro-");
+      if (isAdbroRoot) {
+        this.hideElement(slot);
+        return;
+      }
+
+      // Only hide nested ADBRO nodes when they are not already inside the
+      // root; hiding each child independently can leave the takeover shell.
+      if (className.startsWith("adbro-") && slot.closest("#adbro")) return;
+
       const image = slot.querySelector("img");
       if (image) {
         const src = image.currentSrc || image.src || image.getAttribute("data-src") || "";

@@ -2,6 +2,7 @@ import { STREAMING_KEYWORDS, COMIC_KEYWORDS } from "./shared";
 
 document.addEventListener("DOMContentLoaded", () => {
   const autoHideToggle = document.getElementById("auto-hide-toggle") as HTMLInputElement;
+  const visionModelSelect = document.getElementById("vision-model-select") as HTMLSelectElement;
   const adListContainer = document.getElementById("ad-list") as HTMLElement;
   const emptyState = document.getElementById("empty-ads-state") as HTMLElement;
   const adCountBadge = document.getElementById("ad-count-badge") as HTMLElement;
@@ -13,14 +14,19 @@ document.addEventListener("DOMContentLoaded", () => {
   const aiCategoryBadge = document.getElementById("ai-category-badge") as HTMLElement;
   const aiCategoryText = document.getElementById("ai-category-text") as HTMLElement;
 
-  chrome.storage.sync.get(["autoHideAds"], (res) => {
+  chrome.storage.sync.get(["autoHideAds", "visionModel"], (res) => {
     if (res.autoHideAds !== undefined) {
       autoHideToggle.checked = res.autoHideAds;
     }
+    visionModelSelect.value = res.visionModel || "clip";
   });
 
   autoHideToggle.addEventListener("change", () => {
     chrome.storage.sync.set({ autoHideAds: autoHideToggle.checked });
+  });
+
+  visionModelSelect.addEventListener("change", () => {
+    chrome.storage.sync.set({ visionModel: visionModelSelect.value });
   });
 
   loadTabAds();

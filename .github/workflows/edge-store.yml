@@ -45,6 +45,17 @@ jobs:
       - name: Run installed-extension E2E tests
         run: npm run test:e2e
 
+      - name: Generate Microsoft Edge Store screenshots
+        run: node scripts/generate-edge-store-screenshots.mjs
+
+      - name: Upload Microsoft Edge Store screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: edge-store-screenshots-${{ github.run_id }}
+          path: artifacts/edge-store/*.png
+          if-no-files-found: error
+          retention-days: 90
+
       - name: Upload popup screenshots and Playwright diagnostics
         if: always()
         uses: actions/upload-artifact@v4

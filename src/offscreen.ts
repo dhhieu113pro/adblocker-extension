@@ -20,7 +20,7 @@ async function getClipClassifier() {
 
   isClassifierLoading = true;
   try {
-    clipClassifier = await pipeline("zero-shot-image-classification", "Xenova/clip-vit-base-patch16-224");
+    clipClassifier = await pipeline("zero-shot-image-classification", "Xenova/clip-vit-base-patch16");
     return clipClassifier;
   } finally {
     isClassifierLoading = false;
@@ -37,7 +37,7 @@ async function getMobileNetClassifier() {
   try {
     mobileNetClassifier = await pipeline(
       "image-classification",
-      "Xenova/mobilenetv4_conv_small.e2400_r224_in1k"
+      "onnx-community/mobilenetv4_conv_small.e2400_r224_in1k"
     );
     return mobileNetClassifier;
   } finally {
@@ -51,7 +51,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === "clipClassifyAd") {
     (async () => {
       try {
-        const classifier = message.model === "mobilenet"
+        const selectedModel = message.model === "clip" ? "clip" : "mobilenet";
+        const classifier = selectedModel === "mobilenet"
           ? await getMobileNetClassifier()
           : await getClipClassifier();
         const candidate_labels = [
@@ -61,12 +62,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           "regular website photo or graphic"
         ];
 
-        const output = message.model === "mobilenet"
+        const output = selectedModel === "mobilenet"
           ? await classifier(message.imageDataUrl)
           : await classifier(message.imageDataUrl, candidate_labels);
-        sendResponse({ success: true, results: output, model: message.model || "clip" });
+        sendResponse({ success: true, results: output, model: selectedModel });
       } catch (err: any) {
-        console.error("[Offscreen CLIP]", err);
+        console.error("[Offscreen Vision]", err);
         sendResponse({ error: err?.message || String(err) });
       }
     })();

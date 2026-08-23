@@ -180,7 +180,7 @@ input:focus-visible + .toggle-slider {
 }
 
 @media (hover: hover) {
-  .tab:hover {
+  .tab:not([aria-selected="true"]):hover {
     background: var(--color-surface);
     color: var(--color-ink-2);
   }
@@ -317,8 +317,7 @@ input:focus-visible + .toggle-slider {
   padding-top: var(--space-md);
 }
 
-.section-heading,
-.panel-heading {
+.section-heading {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -466,12 +465,24 @@ input:focus-visible + .toggle-slider {
 }
 
 .panel-heading {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
   padding: var(--space-lg) 0 var(--space-md);
   border-bottom: 1px solid var(--color-rule);
 }
 
 .panel-heading-action {
+  flex-direction: row;
   align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+}
+
+.panel-heading-action > div {
+  min-width: 0;
 }
 
 .eyebrow {

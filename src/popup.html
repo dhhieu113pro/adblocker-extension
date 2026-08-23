@@ -7,81 +7,126 @@
   <link rel="stylesheet" href="popup.css" />
 </head>
 <body>
-  <div class="popup-container">
+  <main class="popup-container">
     <header class="header">
-      <div class="header-title">
-        <span class="logo-icon">🛡️</span>
-        <h1>AI Vision Ad Blocker</h1>
+      <div class="brand">
+        <div class="brand-icon" aria-hidden="true">🛡️</div>
+        <div>
+          <h1>AI Vision Ad Blocker</h1>
+          <p>Smart protection for this page</p>
+        </div>
       </div>
       <span class="version">v1.0.11</span>
     </header>
 
-    <div id="ai-category-badge" style="display: none; align-items: center; gap: 6px; font-size: 11px; color: var(--text-secondary); background: var(--bg-secondary); padding: 6px 12px; border-radius: 8px; border: 1px solid var(--border-color); margin-bottom: 2px;">
-      <span>🎨 AI Category:</span>
-      <strong id="ai-category-text" style="color: var(--accent-color); font-weight: 700;">General Site</strong>
-    </div>
+    <section class="protection-card" id="protection-card" aria-live="polite">
+      <div class="protection-main">
+        <div class="status-icon" id="status-icon" aria-hidden="true">✓</div>
+        <div class="status-copy">
+          <span class="status-label" id="status-label">Protection is on</span>
+          <strong id="current-site">Loading site…</strong>
+          <span class="status-detail" id="status-detail">Ads are automatically detected and hidden.</span>
+        </div>
+        <label class="toggle-switch toggle-large" title="Block ads on this site">
+          <input type="checkbox" id="site-block-toggle" checked aria-label="Block ads on this site" />
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+    </section>
 
-    <div class="tab-content active" id="tab-adblocker">
-      <div class="settings-card">
+    <section class="summary-grid" aria-label="Page summary">
+      <div class="summary-card">
+        <span class="summary-icon" aria-hidden="true">🚫</span>
+        <div>
+          <strong id="ad-count-summary">0</strong>
+          <span>Detected</span>
+        </div>
+      </div>
+      <div class="summary-card">
+        <span class="summary-icon" aria-hidden="true">✨</span>
+        <div>
+          <strong id="ai-category-text">General</strong>
+          <span>Page type</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="section detected-ads-section">
+      <div class="section-header">
+        <div>
+          <h2>Detected on this page</h2>
+          <p>Review anything the extension identified.</p>
+        </div>
+        <span class="ad-count-badge" id="ad-count-badge">0</span>
+      </div>
+      <div class="ad-list" id="ad-list">
+        <div class="empty-state" id="empty-ads-state">
+          <span class="empty-icon" aria-hidden="true">✓</span>
+          <strong>Nothing suspicious found</strong>
+          <p>This page looks clean so far.</p>
+        </div>
+      </div>
+    </section>
+
+    <details class="panel" id="advanced-panel">
+      <summary>
+        <span>
+          <strong>Settings</strong>
+          <small>Detection and AI options</small>
+        </span>
+        <span class="chevron" aria-hidden="true">⌄</span>
+      </summary>
+      <div class="panel-content">
         <div class="setting-row">
           <div class="setting-info">
-            <span class="setting-title">Auto-Hide Ads</span>
-            <span class="setting-desc">Automatically detect & hide banners & iframes on load</span>
+            <span class="setting-title">Automatic protection</span>
+            <span class="setting-desc">Detect and hide ads while browsing.</span>
           </div>
           <label class="toggle-switch">
-            <input type="checkbox" id="auto-hide-toggle" checked />
+            <input type="checkbox" id="auto-hide-toggle" checked aria-label="Automatic protection" />
             <span class="toggle-slider"></span>
           </label>
         </div>
-        <div class="setting-row">
-          <div class="setting-info">
-            <span class="setting-title">Vision Model</span>
-            <span class="setting-desc">Choose the model used for visual classification</span>
-          </div>
+        <div class="setting-row setting-column">
+          <label class="setting-info" for="vision-model-select">
+            <span class="setting-title">Vision model</span>
+            <span class="setting-desc">CLIP is recommended for accurate image detection.</span>
+          </label>
           <select id="vision-model-select" class="model-select">
-            <option value="clip">CLIP Vision (recommended)</option>
-            <option value="mobilenet">MobileNetV4 Fast (experimental)</option>
+            <option value="clip">CLIP Vision · Recommended</option>
+            <option value="mobilenet">MobileNetV4 · Experimental</option>
           </select>
         </div>
-        <div class="setting-row">
-          <div class="setting-info">
-            <span class="setting-title">Block Ads on This Site</span>
-            <span class="setting-desc" id="site-block-desc">Loading current site…</span>
-          </div>
-          <label class="toggle-switch">
-            <input type="checkbox" id="site-block-toggle" checked />
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
       </div>
+    </details>
 
-      <div class="detected-ads-section">
-        <div class="section-header">
-          <h3>Detected Ads on Page</h3>
-          <span class="ad-count-badge" id="ad-count-badge">0</span>
+    <details class="panel" id="history-panel">
+      <summary>
+        <span>
+          <strong>Blocked history</strong>
+          <small>Recently blocked ad sources</small>
+        </span>
+        <span class="chevron" aria-hidden="true">⌄</span>
+      </summary>
+      <div class="panel-content history-content">
+        <div class="history-toolbar">
+          <span id="history-summary">No recent blocks</span>
+          <button id="clear-history-btn" class="text-button" type="button">Clear</button>
         </div>
-        <div class="ad-list" id="ad-list">
-          <div class="empty-state" id="empty-ads-state">
-            <span>✨</span>
-            <p>No ads detected on this tab yet</p>
+        <div class="ad-list history-list" id="history-list">
+          <div class="empty-state compact" id="empty-history-state">
+            <span class="empty-icon" aria-hidden="true">○</span>
+            <strong>No blocked history yet</strong>
           </div>
         </div>
       </div>
+    </details>
 
-      <div class="detected-ads-section" style="margin-top: 16px; border-top: 1px solid var(--border-color); padding-top: 16px;">
-        <div class="section-header">
-          <h3>Blocked Ads History</h3>
-          <button id="clear-history-btn" style="background: none; border: none; color: var(--danger-color); font-size: 11px; cursor: pointer; padding: 2px 6px;">Clear History</button>
-        </div>
-        <div class="ad-list" id="history-list" style="max-height: 180px;">
-          <div class="empty-state" id="empty-history-state">
-            <span>📜</span>
-            <p>No history recorded yet</p>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
+    <footer class="footer-note">
+      <span class="privacy-dot" aria-hidden="true"></span>
+      Image analysis runs locally in your browser.
+    </footer>
+  </main>
 
   <script src="popup.ts" type="module"></script>
 </body>

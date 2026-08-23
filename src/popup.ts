@@ -21,7 +21,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   chrome.storage.sync.get(["autoHideAds", "visionModel"], (res) => {
     if (res.autoHideAds !== undefined) autoHideToggle.checked = res.autoHideAds;
-    visionModelSelect.value = res.visionModel || "clip";
+    visionModelSelect.value = res.visionModel || "mobilenet";
     updateProtectionState();
   });
 

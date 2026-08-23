@@ -49,7 +49,7 @@ let clipCacheLoadPromise: Promise<void> | undefined;
 let clipCacheSaveTimer: number | undefined;
 const inFlightClassify = new Map<string, Promise<any>>();
 const lastCommittedUrls = new Map<number, string>();
-const categoryCache = new Map<string, { category: string; confidence: number }>();
+const categoryCache = new Map<string, { category: string, confidence: number }>();
 
 async function loadClipCache() {
   if (clipCacheLoaded) return;
@@ -242,7 +242,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         // persisted results before deciding to run a new AI classification.
         await loadClipCache();
         const modelSettings = await chrome.storage.sync.get("visionModel");
-        const selectedModel = modelSettings.visionModel || "clip";
+        const selectedModel = modelSettings.visionModel || "mobilenet";
 
         const heuristics = analyzeAdHeuristics(
           message.imageUrl, 

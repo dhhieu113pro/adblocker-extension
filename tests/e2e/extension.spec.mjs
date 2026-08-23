@@ -1,13 +1,14 @@
 import { test, expect, chromium } from '@playwright/test';
 import path from 'node:path';
 import http from 'node:http';
-import { readFile } from 'node:fs/promises';
+import { mkdir, readFile, stat } from 'node:fs/promises';
 
 let context;
 let extensionId;
 let popupPath;
 let server;
 let baseUrl;
+const screenshotDir = path.resolve('artifacts');
 
 async function waitForExtensionServiceWorker(ctx) {
   let workers = ctx.serviceWorkers();
@@ -21,6 +22,8 @@ async function waitForExtensionServiceWorker(ctx) {
 }
 
 test.beforeAll(async () => {
+  await mkdir(screenshotDir, { recursive: true });
+
   const extensionPath = path.resolve('dist');
   const manifest = JSON.parse(await readFile(path.join(extensionPath, 'manifest.json'), 'utf8'));
   popupPath = manifest.action?.default_popup;
@@ -68,17 +71,35 @@ function popupUrl() {
   return `chrome-extension://${extensionId}/${popupPath}`;
 }
 
-test('loads the built MV3 extension and renders the real popup', async () => {
+async function assertScreenshotCreated(filePath) {
+  const file = await stat(filePath);
+  expect(file.size).toBeGreaterThan(0);
+}
+
+test('loads the built MV3 extension and captures popup screenshots', async () => {
   expect(extensionId).toBeTruthy();
   expect(popupPath).toBeTruthy();
 
   const popup = await context.newPage();
+  await popup.setViewportSize({ width: 390, height: 650 });
   await popup.goto(popupUrl());
 
   await expect(popup.getByText('AI Vision Ad Blocker')).toBeVisible();
   await expect(popup.locator('#status-label')).toContainText('Protection');
   await expect(popup.locator('#site-block-toggle')).toBeAttached();
   await expect(popup.locator('#auto-hide-toggle')).toBeAttached();
+
+  const popupScreenshot = path.join(screenshotDir, 'popup.png');
+  await popup.screenshot({ path: popupScreenshot, fullPage: true });
+  await assertScreenshotCreated(popupScreenshot);
+
+  const settingsPanel = popup.locator('#advanced-panel');
+  await settingsPanel.locator('summary').click();
+  await expect(settingsPanel).toHaveAttribute('open', '');
+
+  const settingsScreenshot = path.join(screenshotDir, 'popup-settings.png');
+  await popup.screenshot({ path: settingsScreenshot, fullPage: true });
+  await assertScreenshotCreated(settingsScreenshot);
 });
 
 test('persists popup protection settings through chrome.storage', async () => {

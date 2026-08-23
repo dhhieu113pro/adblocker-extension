@@ -65,7 +65,7 @@ test('loads the built MV3 extension and renders the real popup', async () => {
   await popup.goto(`chrome-extension://${extensionId}/popup.html`);
 
   await expect(popup.getByText('AI Vision Ad Blocker')).toBeVisible();
-  await expect(popup.locator('#protection-status')).toBeVisible();
+  await expect(popup.locator('#status-label')).toContainText('Protection');
   await expect(popup.locator('#site-block-toggle')).toBeVisible();
   await expect(popup.locator('#auto-hide-toggle')).toBeAttached();
 });

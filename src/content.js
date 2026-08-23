@@ -462,7 +462,7 @@ class AdBlockerOverlay {
         if (/(playstream|adnzone|admzone|sspp)/.test(pId + " " + pCls) &&
             !pId.startsWith("ps-video-slot")) {
           this.processedImages.add(video);
-                  this.hideAdVideo(video, `Video inside ad container (${parent.id || pCls})`, parent);
+          this.hideAdVideo(video, `Video inside ad container (${parent.id || pCls})`, parent);
           return;
         }
         parent = parent.parentElement;
@@ -625,17 +625,17 @@ class AdBlockerOverlay {
           for (let i = 0; i < 4 && currEl && currEl.parentElement; i++) {
             const parent = currEl.parentElement;
             const closeBtn = parent.querySelector(
-              "button, [role='button'], .close-it, .close-ad, .close_not_qc, " +
-              "[class*='close-ad'], [class*='ad-close'], .no-ads-under, " +
-              "[aria-label*='quảng cáo'], [aria-label*='Đóng']"
+              ".close-it, .close-ad, .close_not_qc, [class*='close-ad'], [class*='ad-close'], " +
+              ".no-ads-under, [aria-label*='quảng cáo'], [aria-label*='advertisement'], [aria-label*='ad close']"
             );
             if (closeBtn) {
               const btnText = (closeBtn.innerText || closeBtn.textContent || "").toLowerCase();
               const ariaLabel = (closeBtn.getAttribute("aria-label") || "").toLowerCase();
+              const className = (closeBtn.className || "").toString().toLowerCase();
               if (
-                btnText.includes("qc") || btnText.includes("quảng cáo") || btnText.includes("close") || btnText.includes("đóng") ||
-                ariaLabel.includes("qc") || ariaLabel.includes("quảng cáo") || ariaLabel.includes("close") || ariaLabel.includes("đóng") ||
-                closeBtn.classList.contains("no-ads-under")
+                btnText.includes("qc") || btnText.includes("quảng cáo") || btnText.includes("advertisement") ||
+                ariaLabel.includes("qc") || ariaLabel.includes("quảng cáo") || ariaLabel.includes("advertisement") || ariaLabel.includes("ad close") ||
+                className.includes("close-ad") || className.includes("ad-close") || className.includes("no-ads")
               ) {
                 hasCloseAdButton = true;
                 break;
@@ -708,7 +708,9 @@ class AdBlockerOverlay {
   getAdTargetContainer(img) {
     let curr = img;
 
-    // 1. Check if the image is inside a fixed/absolute screen-blocking popup overlay
+    // 1. Only promote a fixed/absolute overlay to the hide target when the
+    // container itself has an explicit ad marker. Generic modals, lightboxes,
+    // image viewers and dialogs are legitimate UI and must not be hidden.
     for (let i = 0; i < 8 && curr && curr.parentElement && curr.parentElement !== document.body; i++) {
       const parent = curr.parentElement;
       const cls = (parent.className || "").toString().toLowerCase();
@@ -718,14 +720,12 @@ class AdBlockerOverlay {
         continue;
       }
       const style = window.getComputedStyle(parent);
-      if (
-        cls.includes("fixed") ||
-        cls.includes("modal") ||
-        cls.includes("popup") ||
-        cls.includes("overlay") ||
+      const isScreenOverlay =
         style.position === "fixed" ||
-        (style.position === "absolute" && parseInt(style.zIndex, 10) >= 999)
-      ) {
+        (style.position === "absolute" && parseInt(style.zIndex, 10) >= 999);
+      const marker = `${id} ${cls}`;
+      const hasExplicitAdMarker = /(^|[-_ ])(ad|ads|advert|advertisement|banner|sponsor|promo|quangcao|qc)([-_ ]|$)/.test(marker);
+      if (isScreenOverlay && hasExplicitAdMarker) {
         return parent;
       }
       curr = parent;
@@ -862,17 +862,17 @@ class AdBlockerOverlay {
       for (let i = 0; i < 4 && currEl && currEl.parentElement; i++) {
         const parent = currEl.parentElement;
         const closeBtn = parent.querySelector(
-          "button, [role='button'], .close-it, .close-ad, .close_not_qc, " +
-          "[class*='close-ad'], [class*='ad-close'], .no-ads-under, " +
-          "[aria-label*='quảng cáo'], [aria-label*='Đóng']"
+          ".close-it, .close-ad, .close_not_qc, [class*='close-ad'], [class*='ad-close'], " +
+          ".no-ads-under, [aria-label*='quảng cáo'], [aria-label*='advertisement'], [aria-label*='ad close']"
         );
         if (closeBtn) {
           const btnText = (closeBtn.innerText || closeBtn.textContent || "").toLowerCase();
           const ariaLabel = (closeBtn.getAttribute("aria-label") || "").toLowerCase();
+          const className = (closeBtn.className || "").toString().toLowerCase();
           if (
-            btnText.includes("qc") || btnText.includes("quảng cáo") || btnText.includes("close") || btnText.includes("đóng") ||
-            ariaLabel.includes("qc") || ariaLabel.includes("quảng cáo") || ariaLabel.includes("close") || ariaLabel.includes("đóng") ||
-            closeBtn.classList.contains("no-ads-under")
+            btnText.includes("qc") || btnText.includes("quảng cáo") || btnText.includes("advertisement") ||
+            ariaLabel.includes("qc") || ariaLabel.includes("quảng cáo") || ariaLabel.includes("advertisement") || ariaLabel.includes("ad close") ||
+            className.includes("close-ad") || className.includes("ad-close") || className.includes("no-ads")
           ) {
             hasCloseAdButton = true;
             break;

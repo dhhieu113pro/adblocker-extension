@@ -83,6 +83,14 @@ async function openPopup() {
   return popup;
 }
 
+test('keeps browser action width fixed when the initial viewport is narrow', async () => {
+  const popup = await context.newPage();
+  await popup.setViewportSize({ width: 80, height: 650 });
+  await popup.goto(popupUrl());
+
+  await expect.poll(async () => popup.evaluate(() => Math.round(document.body.getBoundingClientRect().width))).toBe(390);
+});
+
 test('opens Overview by default and captures every popup tab', async () => {
   expect(extensionId).toBeTruthy();
   expect(popupPath).toBeTruthy();

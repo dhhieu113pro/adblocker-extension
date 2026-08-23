@@ -33,3 +33,12 @@ jobs:
 
       - name: Build extension
         run: npm run build
+
+      - name: Install Playwright test runner
+        run: npm install --no-save --package-lock=false @playwright/test@1.55.0
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run installed-extension E2E tests
+        run: npm run test:e2e

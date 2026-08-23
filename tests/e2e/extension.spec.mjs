@@ -222,3 +222,30 @@ test('content script hides a known ad container on a real HTTP page', async () =
     display: getComputedStyle(el).display,
   }))).toEqual({ hidden: 'true', display: 'none' });
 });
+
+test('whole-page CLIP classification is gated behind explicit CLIP selection', async () => {
+  const background = await readFile(path.resolve('src/background.ts'), 'utf8');
+  const section = background.slice(background.indexOf('// 3. AI Visually Classify Website Category on Load Completed & Block Ad Popups'));
+  const modelRead = section.indexOf('chrome.storage.sync.get("visionModel")');
+  const clipGuard = section.indexOf('selectedModel !== "clip"');
+  const capture = section.indexOf('chrome.tabs.captureVisibleTab');
+
+  expect(modelRead).toBeGreaterThanOrEqual(0);
+  expect(clipGuard).toBeGreaterThan(modelRead);
+  expect(capture).toBeGreaterThan(clipGuard);
+});
+
+test('offscreen uses valid Transformers.js model repositories and MobileNet fallback', async () => {
+  const offscreen = await readFile(path.resolve('src/offscreen.ts'), 'utf8');
+
+  expect(offscreen).toContain('"Xenova/clip-vit-base-patch16"');
+  expect(offscreen).not.toContain('"Xenova/clip-vit-base-patch16-224"');
+  expect(offscreen).toContain('"onnx-community/mobilenetv4_conv_small.e2400_r224_in1k"');
+  expect(offscreen).toContain('const selectedModel = message.model === "clip" ? "clip" : "mobilenet";');
+});
+
+test('MobileNet image results are labelled as MobileNet instead of CLIP zero-shot', async () => {
+  const background = await readFile(path.resolve('src/background.ts'), 'utf8');
+
+  expect(background).toContain('MobileNetV4 Image Classification + Heuristics');
+});

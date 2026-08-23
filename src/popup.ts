@@ -5,7 +5,6 @@ document.addEventListener("DOMContentLoaded", () => {
   const visionModelSelect = document.getElementById("vision-model-select") as HTMLSelectElement;
   const siteBlockToggle = document.getElementById("site-block-toggle") as HTMLInputElement;
   const protectionCard = document.getElementById("protection-card") as HTMLElement;
-  const statusIcon = document.getElementById("status-icon") as HTMLElement;
   const statusLabel = document.getElementById("status-label") as HTMLElement;
   const statusDetail = document.getElementById("status-detail") as HTMLElement;
   const currentSite = document.getElementById("current-site") as HTMLElement;
@@ -18,10 +17,51 @@ document.addEventListener("DOMContentLoaded", () => {
   const emptyHistoryState = document.getElementById("empty-history-state") as HTMLElement;
   const historySummary = document.getElementById("history-summary") as HTMLElement;
   const clearHistoryBtn = document.getElementById("clear-history-btn") as HTMLButtonElement;
+  const tabButtons = Array.from(document.querySelectorAll<HTMLButtonElement>("[role='tab']"));
+  const tabPanels = Array.from(document.querySelectorAll<HTMLElement>("[role='tabpanel']"));
+
+  function activateTab(tabId: string, focus = false) {
+    const activeButtonId = `tab-${tabId}`;
+    const activePanelId = `panel-${tabId}`;
+
+    tabButtons.forEach((button) => {
+      const active = button.id === activeButtonId;
+      button.classList.toggle("is-active", active);
+      button.setAttribute("aria-selected", String(active));
+      button.tabIndex = active ? 0 : -1;
+      if (active && focus) button.focus();
+    });
+
+    tabPanels.forEach((panel) => {
+      panel.hidden = panel.id !== activePanelId;
+    });
+  }
+
+  tabButtons.forEach((button, index) => {
+    button.addEventListener("click", () => {
+      activateTab(button.id.replace("tab-", ""));
+    });
+
+    button.addEventListener("keydown", (event) => {
+      let nextIndex = index;
+
+      if (event.key === "ArrowRight") nextIndex = (index + 1) % tabButtons.length;
+      else if (event.key === "ArrowLeft") nextIndex = (index - 1 + tabButtons.length) % tabButtons.length;
+      else if (event.key === "Home") nextIndex = 0;
+      else if (event.key === "End") nextIndex = tabButtons.length - 1;
+      else return;
+
+      event.preventDefault();
+      activateTab(tabButtons[nextIndex].id.replace("tab-", ""), true);
+    });
+  });
+
+  // A newly opened popup always starts on the browsing-focused Overview tab.
+  activateTab("overview");
 
   chrome.storage.sync.get(["autoHideAds", "visionModel"], (res) => {
     if (res.autoHideAds !== undefined) autoHideToggle.checked = res.autoHideAds;
-    visionModelSelect.value = res.visionModel || "clip";
+    visionModelSelect.value = res.visionModel || "mobilenet";
     updateProtectionState();
   });
 
@@ -38,13 +78,14 @@ document.addEventListener("DOMContentLoaded", () => {
     const site = getSiteKey(activeTab?.url);
 
     if (!site) {
+      siteBlockToggle.checked = false;
       siteBlockToggle.disabled = true;
       currentSite.textContent = "This browser page";
-      statusDetail.textContent = "Protection is unavailable on browser-internal pages.";
       updateProtectionState();
       return;
     }
 
+    siteBlockToggle.disabled = false;
     currentSite.textContent = site;
     chrome.storage.sync.get(["disabledSites"], (res) => {
       siteBlockToggle.checked = !(res.disabledSites || []).includes(site);
@@ -62,21 +103,25 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   function updateProtectionState() {
+    const unavailable = siteBlockToggle.disabled;
     const globalEnabled = autoHideToggle.checked;
-    const siteEnabled = !siteBlockToggle.disabled && siteBlockToggle.checked;
+    const siteEnabled = !unavailable && siteBlockToggle.checked;
     const enabled = globalEnabled && siteEnabled;
 
-    protectionCard.classList.toggle("off", !enabled);
-    statusIcon.textContent = enabled ? "✓" : "–";
-    statusLabel.textContent = enabled ? "Protection is on" : "Protection is off";
+    protectionCard.classList.toggle("unavailable", unavailable);
+    protectionCard.classList.toggle("off", !unavailable && !enabled);
 
-    if (siteBlockToggle.disabled) {
+    if (unavailable) {
+      statusLabel.textContent = "Protection unavailable";
       statusDetail.textContent = "Protection is unavailable on browser-internal pages.";
     } else if (!globalEnabled) {
+      statusLabel.textContent = "Protection is off";
       statusDetail.textContent = "Automatic ad detection is turned off globally.";
     } else if (!siteEnabled) {
+      statusLabel.textContent = "Protection is off";
       statusDetail.textContent = "Ads are allowed on this site.";
     } else {
+      statusLabel.textContent = "Protection is on";
       statusDetail.textContent = "Ads are automatically detected and hidden.";
     }
   }
@@ -155,7 +200,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     history.forEach((ad) => {
       const item = document.createElement("div");
-      item.className = "ad-item";
+      item.className = "history-item";
 
       let pageDomain = "unknown page";
       try { pageDomain = new URL(ad.pageUrl).hostname; } catch {}
@@ -175,7 +220,7 @@ document.addEventListener("DOMContentLoaded", () => {
       info.append(domain, meta);
 
       const time = document.createElement("span");
-      time.className = "ad-meta";
+      time.className = "row-time";
       time.textContent = formatRelativeTime(ad.timestamp);
 
       item.append(info, time);

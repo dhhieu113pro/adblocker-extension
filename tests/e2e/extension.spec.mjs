@@ -102,6 +102,27 @@ test('loads the built MV3 extension and captures popup screenshots', async () =>
   await assertScreenshotCreated(settingsScreenshot);
 });
 
+test('defaults to MobileNetV4 when no vision model preference is stored', async () => {
+  const popup = await context.newPage();
+  await popup.goto(popupUrl());
+
+  await popup.evaluate(() => new Promise((resolve) => chrome.storage.sync.remove('visionModel', resolve)));
+  await popup.reload();
+
+  const settingsPanel = popup.locator('#advanced-panel');
+  await settingsPanel.locator('summary').click();
+  await expect(settingsPanel).toHaveAttribute('open', '');
+  await expect(popup.locator('#vision-model-select')).toHaveValue('mobilenet');
+});
+
+test('labels MobileNetV4 as the recommended vision model', async () => {
+  const popup = await context.newPage();
+  await popup.goto(popupUrl());
+
+  await expect(popup.locator('#vision-model-select option[value="mobilenet"]')).toHaveText('MobileNetV4 · Recommended');
+  await expect(popup.locator('#vision-model-select option[value="clip"]')).toHaveText('CLIP Vision');
+});
+
 test('persists popup protection settings through chrome.storage', async () => {
   const popup = await context.newPage();
   await popup.goto(popupUrl());

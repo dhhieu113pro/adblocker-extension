@@ -1,0 +1,227 @@
+name: Publish Microsoft Edge Store
+
+on:
+  push:
+    tags:
+      - 'v*-edge'
+
+permissions:
+  contents: read
+
+jobs:
+  test-build-publish:
+    runs-on: ubuntu-latest
+    env:
+      EDGE_CLIENT_ID: ${{ secrets.EDGE_CLIENT_ID }}
+      EDGE_API_KEY: ${{ secrets.EDGE_API_KEY }}
+      EDGE_PRODUCT_ID: ${{ secrets.EDGE_PRODUCT_ID }}
+      EDGE_API_ROOT: https://api.addons.microsoftedge.microsoft.com/v1
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests with 100% coverage gate
+        run: npm run test:coverage
+
+      - name: Build extension
+        run: npm run build
+
+      - name: Install Playwright test runner
+        run: npm install --no-save --package-lock=false @playwright/test@1.55.0
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run installed-extension E2E tests
+        run: npm run test:e2e
+
+      - name: Validate Edge tag matches manifest version
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          TAG_VERSION="${TAG_VERSION%-edge}"
+          MANIFEST_VERSION="$(node -p "require('./src/manifest.json').version")"
+
+          echo "Tag version:      $TAG_VERSION"
+          echo "Manifest version: $MANIFEST_VERSION"
+
+          if [[ "$TAG_VERSION" != "$MANIFEST_VERSION" ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME requires manifest version $TAG_VERSION, but src/manifest.json is $MANIFEST_VERSION"
+            exit 1
+          fi
+
+      - name: Validate Edge Store secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in EDGE_CLIENT_ID EDGE_API_KEY EDGE_PRODUCT_ID; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::Missing GitHub Actions secret: $name"
+              exit 1
+            fi
+          done
+
+      - name: Package Edge extension
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist
+          zip -r "../webllm-adblocker-${GITHUB_REF_NAME}.zip" .
+
+      - name: Upload package to Edge Add-ons
+        id: edge_upload
+        shell: bash
+        run: |
+          set -euo pipefail
+          PACKAGE="webllm-adblocker-${GITHUB_REF_NAME}.zip"
+          HEADERS="$(mktemp)"
+          BODY="$(mktemp)"
+
+          HTTP_CODE=$(curl --silent --show-error \
+            --output "$BODY" \
+            --dump-header "$HEADERS" \
+            --write-out '%{http_code}' \
+            -H "Authorization: ApiKey $EDGE_API_KEY" \
+            -H "X-ClientID: $EDGE_CLIENT_ID" \
+            -H "Content-Type: application/zip" \
+            -X POST \
+            --data-binary "@$PACKAGE" \
+            "$EDGE_API_ROOT/products/$EDGE_PRODUCT_ID/submissions/draft/package")
+
+          cat "$BODY"
+
+          if [[ "$HTTP_CODE" != "202" ]]; then
+            echo "::error::Edge package upload returned HTTP $HTTP_CODE"
+            exit 1
+          fi
+
+          LOCATION=$(awk 'BEGIN{IGNORECASE=1} /^location:/ {gsub("\r", "", $2); print $2}' "$HEADERS" | tail -n1)
+          OPERATION_ID="${LOCATION##*/}"
+
+          if [[ -z "$OPERATION_ID" ]]; then
+            echo "::error::Edge package upload did not return a Location operation ID"
+            cat "$HEADERS"
+            exit 1
+          fi
+
+          echo "operation_id=$OPERATION_ID" >> "$GITHUB_OUTPUT"
+          echo "Upload operation: $OPERATION_ID"
+
+      - name: Wait for Edge package validation
+        shell: bash
+        env:
+          OPERATION_ID: ${{ steps.edge_upload.outputs.operation_id }}
+        run: |
+          set -euo pipefail
+
+          for attempt in $(seq 1 60); do
+            RESPONSE=$(curl --fail-with-body --silent --show-error \
+              -H "Authorization: ApiKey $EDGE_API_KEY" \
+              -H "X-ClientID: $EDGE_CLIENT_ID" \
+              "$EDGE_API_ROOT/products/$EDGE_PRODUCT_ID/submissions/draft/package/operations/$OPERATION_ID")
+
+            STATUS=$(jq -r '.status // empty' <<< "$RESPONSE")
+            echo "Package validation [$attempt/60]: ${STATUS:-Unknown}"
+
+            case "$STATUS" in
+              Succeeded)
+                echo "$RESPONSE" | jq .
+                exit 0
+                ;;
+              Failed)
+                echo "$RESPONSE" | jq .
+                echo "::error::Microsoft Edge rejected the uploaded package"
+                exit 1
+                ;;
+            esac
+
+            sleep 10
+          done
+
+          echo "::error::Timed out waiting for Edge package validation"
+          exit 1
+
+      - name: Submit Edge draft for certification
+        id: edge_submit
+        shell: bash
+        run: |
+          set -euo pipefail
+          HEADERS="$(mktemp)"
+          BODY="$(mktemp)"
+          NOTES="Automated GitHub Actions submission for ${GITHUB_REF_NAME}"
+
+          HTTP_CODE=$(curl --silent --show-error \
+            --output "$BODY" \
+            --dump-header "$HEADERS" \
+            --write-out '%{http_code}' \
+            -H "Authorization: ApiKey $EDGE_API_KEY" \
+            -H "X-ClientID: $EDGE_CLIENT_ID" \
+            -H "Content-Type: text/plain" \
+            -X POST \
+            --data-binary "$NOTES" \
+            "$EDGE_API_ROOT/products/$EDGE_PRODUCT_ID/submissions")
+
+          cat "$BODY"
+
+          if [[ "$HTTP_CODE" != "202" ]]; then
+            echo "::error::Edge submission returned HTTP $HTTP_CODE"
+            exit 1
+          fi
+
+          LOCATION=$(awk 'BEGIN{IGNORECASE=1} /^location:/ {gsub("\r", "", $2); print $2}' "$HEADERS" | tail -n1)
+          OPERATION_ID="${LOCATION##*/}"
+
+          if [[ -z "$OPERATION_ID" ]]; then
+            echo "::error::Edge submission did not return a Location operation ID"
+            cat "$HEADERS"
+            exit 1
+          fi
+
+          echo "operation_id=$OPERATION_ID" >> "$GITHUB_OUTPUT"
+          echo "Publish operation: $OPERATION_ID"
+
+      - name: Wait for Edge submission creation
+        shell: bash
+        env:
+          OPERATION_ID: ${{ steps.edge_submit.outputs.operation_id }}
+        run: |
+          set -euo pipefail
+
+          for attempt in $(seq 1 60); do
+            RESPONSE=$(curl --fail-with-body --silent --show-error \
+              -H "Authorization: ApiKey $EDGE_API_KEY" \
+              -H "X-ClientID: $EDGE_CLIENT_ID" \
+              "$EDGE_API_ROOT/products/$EDGE_PRODUCT_ID/submissions/operations/$OPERATION_ID")
+
+            STATUS=$(jq -r '.status // empty' <<< "$RESPONSE")
+            echo "Submission creation [$attempt/60]: ${STATUS:-Unknown}"
+
+            case "$STATUS" in
+              Succeeded)
+                echo "$RESPONSE" | jq .
+                echo "Microsoft Edge Store submission created successfully."
+                exit 0
+                ;;
+              Failed)
+                echo "$RESPONSE" | jq .
+                echo "::error::Microsoft Edge could not create the Store submission"
+                exit 1
+                ;;
+            esac
+
+            sleep 10
+          done
+
+          echo "::error::Timed out waiting for Edge submission creation"
+          exit 1

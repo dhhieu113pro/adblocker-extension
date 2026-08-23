@@ -64,7 +64,7 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   await context?.close();
-  await new Promise((resolve) => server?.close(() => resolve()));
+  if (server) await new Promise((resolve) => server.close(resolve));
 });
 
 function popupUrl() {
@@ -76,60 +76,89 @@ async function assertScreenshotCreated(filePath) {
   expect(file.size).toBeGreaterThan(0);
 }
 
-test('loads the built MV3 extension and captures popup screenshots', async () => {
-  expect(extensionId).toBeTruthy();
-  expect(popupPath).toBeTruthy();
-
+async function openPopup() {
   const popup = await context.newPage();
   await popup.setViewportSize({ width: 390, height: 650 });
   await popup.goto(popupUrl());
+  return popup;
+}
 
+test('opens Overview by default and captures every popup tab', async () => {
+  expect(extensionId).toBeTruthy();
+  expect(popupPath).toBeTruthy();
+
+  const popup = await openPopup();
   await expect(popup.getByText('AI Vision Ad Blocker')).toBeVisible();
-  await expect(popup.locator('#status-label')).toContainText('Protection');
-  await expect(popup.locator('#site-block-toggle')).toBeAttached();
-  await expect(popup.locator('#auto-hide-toggle')).toBeAttached();
 
-  const popupScreenshot = path.join(screenshotDir, 'popup.png');
-  await popup.screenshot({ path: popupScreenshot, fullPage: true });
-  await assertScreenshotCreated(popupScreenshot);
+  const overviewTab = popup.getByRole('tab', { name: 'Overview' });
+  const settingsTab = popup.getByRole('tab', { name: 'Settings' });
+  const historyTab = popup.getByRole('tab', { name: 'History' });
 
-  const settingsPanel = popup.locator('#advanced-panel');
-  await settingsPanel.locator('summary').click();
-  await expect(settingsPanel).toHaveAttribute('open', '');
+  await expect(overviewTab).toHaveAttribute('aria-selected', 'true');
+  await expect(popup.locator('#panel-overview')).toBeVisible();
+  await expect(popup.locator('#panel-settings')).toBeHidden();
+  await expect(popup.locator('#panel-history')).toBeHidden();
 
+  const overviewScreenshot = path.join(screenshotDir, 'popup-overview.png');
+  await popup.screenshot({ path: overviewScreenshot, fullPage: true });
+  await assertScreenshotCreated(overviewScreenshot);
+
+  await settingsTab.click();
+  await expect(settingsTab).toHaveAttribute('aria-selected', 'true');
+  await expect(popup.locator('#panel-settings')).toBeVisible();
   const settingsScreenshot = path.join(screenshotDir, 'popup-settings.png');
   await popup.screenshot({ path: settingsScreenshot, fullPage: true });
   await assertScreenshotCreated(settingsScreenshot);
+
+  await historyTab.click();
+  await expect(historyTab).toHaveAttribute('aria-selected', 'true');
+  await expect(popup.locator('#panel-history')).toBeVisible();
+  const historyScreenshot = path.join(screenshotDir, 'popup-history.png');
+  await popup.screenshot({ path: historyScreenshot, fullPage: true });
+  await assertScreenshotCreated(historyScreenshot);
+});
+
+test('supports keyboard navigation across popup tabs', async () => {
+  const popup = await openPopup();
+  const overviewTab = popup.getByRole('tab', { name: 'Overview' });
+  const settingsTab = popup.getByRole('tab', { name: 'Settings' });
+  const historyTab = popup.getByRole('tab', { name: 'History' });
+
+  await overviewTab.focus();
+  await popup.keyboard.press('ArrowRight');
+  await expect(settingsTab).toHaveAttribute('aria-selected', 'true');
+  await expect(settingsTab).toBeFocused();
+
+  await popup.keyboard.press('ArrowRight');
+  await expect(historyTab).toHaveAttribute('aria-selected', 'true');
+  await expect(historyTab).toBeFocused();
+
+  await popup.keyboard.press('Home');
+  await expect(overviewTab).toHaveAttribute('aria-selected', 'true');
+  await expect(overviewTab).toBeFocused();
 });
 
 test('defaults to MobileNetV4 when no vision model preference is stored', async () => {
-  const popup = await context.newPage();
-  await popup.goto(popupUrl());
+  const popup = await openPopup();
 
   await popup.evaluate(() => new Promise((resolve) => chrome.storage.sync.remove('visionModel', resolve)));
   await popup.reload();
+  await popup.getByRole('tab', { name: 'Settings' }).click();
 
-  const settingsPanel = popup.locator('#advanced-panel');
-  await settingsPanel.locator('summary').click();
-  await expect(settingsPanel).toHaveAttribute('open', '');
   await expect(popup.locator('#vision-model-select')).toHaveValue('mobilenet');
 });
 
 test('labels MobileNetV4 as the recommended vision model', async () => {
-  const popup = await context.newPage();
-  await popup.goto(popupUrl());
+  const popup = await openPopup();
+  await popup.getByRole('tab', { name: 'Settings' }).click();
 
   await expect(popup.locator('#vision-model-select option[value="mobilenet"]')).toHaveText('MobileNetV4 · Recommended');
   await expect(popup.locator('#vision-model-select option[value="clip"]')).toHaveText('CLIP Vision');
 });
 
 test('persists popup protection settings through chrome.storage', async () => {
-  const popup = await context.newPage();
-  await popup.goto(popupUrl());
-
-  const settingsPanel = popup.locator('#advanced-panel');
-  await settingsPanel.locator('summary').click();
-  await expect(settingsPanel).toHaveAttribute('open', '');
+  const popup = await openPopup();
+  await popup.getByRole('tab', { name: 'Settings' }).click();
 
   const autoHide = popup.locator('#auto-hide-toggle');
   const autoHideSlider = autoHide.locator('xpath=following-sibling::*[contains(@class,"toggle-slider")]');
@@ -148,6 +177,31 @@ test('persists popup protection settings through chrome.storage', async () => {
     const value = await chrome.storage.sync.get('autoHideAds');
     return value.autoHideAds;
   })).toBe(true);
+});
+
+test('renders and clears blocked history from the History tab', async () => {
+  const popup = await openPopup();
+  await popup.evaluate(() => chrome.storage.local.set({
+    adBlockHistory: [{
+      url: 'https://ads.example.com/banner',
+      domain: 'ads.example.com',
+      pageUrl: 'https://movie.example/watch',
+      timestamp: Date.now(),
+      count: 3,
+    }],
+  }));
+  await popup.reload();
+  await popup.getByRole('tab', { name: 'History' }).click();
+
+  await expect(popup.locator('#history-list')).toContainText('ads.example.com');
+  await expect(popup.locator('#history-list')).toContainText('blocked 3×');
+
+  await popup.locator('#clear-history-btn').click();
+  await expect(popup.locator('#history-list')).toContainText('No blocked history yet');
+  await expect.poll(async () => popup.evaluate(async () => {
+    const value = await chrome.storage.local.get('adBlockHistory');
+    return value.adBlockHistory;
+  })).toEqual([]);
 });
 
 test('content script hides a known ad container on a real HTTP page', async () => {

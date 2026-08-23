@@ -77,7 +77,7 @@ test('loads the built MV3 extension and renders the real popup', async () => {
 
   await expect(popup.getByText('AI Vision Ad Blocker')).toBeVisible();
   await expect(popup.locator('#status-label')).toContainText('Protection');
-  await expect(popup.locator('#site-block-toggle')).toBeVisible();
+  await expect(popup.locator('#site-block-toggle')).toBeAttached();
   await expect(popup.locator('#auto-hide-toggle')).toBeAttached();
 });
 
@@ -85,15 +85,23 @@ test('persists popup protection settings through chrome.storage', async () => {
   const popup = await context.newPage();
   await popup.goto(popupUrl());
 
+  const settingsPanel = popup.locator('#advanced-panel');
+  await settingsPanel.locator('summary').click();
+  await expect(settingsPanel).toHaveAttribute('open', '');
+
   const autoHide = popup.locator('#auto-hide-toggle');
-  await autoHide.uncheck();
+  const autoHideSlider = autoHide.locator('xpath=following-sibling::*[contains(@class,"toggle-slider")]');
+
+  if (await autoHide.isChecked()) {
+    await autoHideSlider.click();
+  }
 
   await expect.poll(async () => popup.evaluate(async () => {
     const value = await chrome.storage.sync.get('autoHideAds');
     return value.autoHideAds;
   })).toBe(false);
 
-  await autoHide.check();
+  await autoHideSlider.click();
   await expect.poll(async () => popup.evaluate(async () => {
     const value = await chrome.storage.sync.get('autoHideAds');
     return value.autoHideAds;

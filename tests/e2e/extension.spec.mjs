@@ -1,9 +1,11 @@
 import { test, expect, chromium } from '@playwright/test';
 import path from 'node:path';
 import http from 'node:http';
+import { readFile } from 'node:fs/promises';
 
 let context;
 let extensionId;
+let popupPath;
 let server;
 let baseUrl;
 
@@ -20,6 +22,10 @@ async function waitForExtensionServiceWorker(ctx) {
 
 test.beforeAll(async () => {
   const extensionPath = path.resolve('dist');
+  const manifest = JSON.parse(await readFile(path.join(extensionPath, 'manifest.json'), 'utf8'));
+  popupPath = manifest.action?.default_popup;
+  if (!popupPath) throw new Error('Built manifest does not define action.default_popup');
+
   context = await chromium.launchPersistentContext('', {
     channel: 'chromium',
     headless: true,
@@ -58,11 +64,16 @@ test.afterAll(async () => {
   await new Promise((resolve) => server?.close(() => resolve()));
 });
 
+function popupUrl() {
+  return `chrome-extension://${extensionId}/${popupPath}`;
+}
+
 test('loads the built MV3 extension and renders the real popup', async () => {
   expect(extensionId).toBeTruthy();
+  expect(popupPath).toBeTruthy();
 
   const popup = await context.newPage();
-  await popup.goto(`chrome-extension://${extensionId}/popup.html`);
+  await popup.goto(popupUrl());
 
   await expect(popup.getByText('AI Vision Ad Blocker')).toBeVisible();
   await expect(popup.locator('#status-label')).toContainText('Protection');
@@ -72,7 +83,7 @@ test('loads the built MV3 extension and renders the real popup', async () => {
 
 test('persists popup protection settings through chrome.storage', async () => {
   const popup = await context.newPage();
-  await popup.goto(`chrome-extension://${extensionId}/popup.html`);
+  await popup.goto(popupUrl());
 
   const autoHide = popup.locator('#auto-hide-toggle');
   await autoHide.uncheck();

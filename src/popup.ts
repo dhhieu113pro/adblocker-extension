@@ -4,27 +4,29 @@ document.addEventListener("DOMContentLoaded", () => {
   const autoHideToggle = document.getElementById("auto-hide-toggle") as HTMLInputElement;
   const visionModelSelect = document.getElementById("vision-model-select") as HTMLSelectElement;
   const siteBlockToggle = document.getElementById("site-block-toggle") as HTMLInputElement;
-  const siteBlockDesc = document.getElementById("site-block-desc") as HTMLElement;
+  const protectionCard = document.getElementById("protection-card") as HTMLElement;
+  const statusIcon = document.getElementById("status-icon") as HTMLElement;
+  const statusLabel = document.getElementById("status-label") as HTMLElement;
+  const statusDetail = document.getElementById("status-detail") as HTMLElement;
+  const currentSite = document.getElementById("current-site") as HTMLElement;
   const adListContainer = document.getElementById("ad-list") as HTMLElement;
   const emptyState = document.getElementById("empty-ads-state") as HTMLElement;
   const adCountBadge = document.getElementById("ad-count-badge") as HTMLElement;
-
+  const adCountSummary = document.getElementById("ad-count-summary") as HTMLElement;
+  const aiCategoryText = document.getElementById("ai-category-text") as HTMLElement;
   const historyListContainer = document.getElementById("history-list") as HTMLElement;
   const emptyHistoryState = document.getElementById("empty-history-state") as HTMLElement;
-  const clearHistoryBtn = document.getElementById("clear-history-btn") as HTMLElement;
-
-  const aiCategoryBadge = document.getElementById("ai-category-badge") as HTMLElement;
-  const aiCategoryText = document.getElementById("ai-category-text") as HTMLElement;
+  const historySummary = document.getElementById("history-summary") as HTMLElement;
+  const clearHistoryBtn = document.getElementById("clear-history-btn") as HTMLButtonElement;
 
   chrome.storage.sync.get(["autoHideAds", "visionModel"], (res) => {
-    if (res.autoHideAds !== undefined) {
-      autoHideToggle.checked = res.autoHideAds;
-    }
+    if (res.autoHideAds !== undefined) autoHideToggle.checked = res.autoHideAds;
     visionModelSelect.value = res.visionModel || "clip";
+    updateProtectionState();
   });
 
   autoHideToggle.addEventListener("change", () => {
-    chrome.storage.sync.set({ autoHideAds: autoHideToggle.checked });
+    chrome.storage.sync.set({ autoHideAds: autoHideToggle.checked }, updateProtectionState);
   });
 
   visionModelSelect.addEventListener("change", () => {
@@ -34,24 +36,50 @@ document.addEventListener("DOMContentLoaded", () => {
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     const activeTab = tabs[0];
     const site = getSiteKey(activeTab?.url);
+
     if (!site) {
       siteBlockToggle.disabled = true;
-      siteBlockDesc.textContent = "Unavailable on this page";
+      currentSite.textContent = "This browser page";
+      statusDetail.textContent = "Protection is unavailable on browser-internal pages.";
+      updateProtectionState();
       return;
     }
-    siteBlockDesc.textContent = site;
+
+    currentSite.textContent = site;
     chrome.storage.sync.get(["disabledSites"], (res) => {
       siteBlockToggle.checked = !(res.disabledSites || []).includes(site);
+      updateProtectionState();
     });
+
     siteBlockToggle.addEventListener("change", () => {
       chrome.storage.sync.get(["disabledSites"], (current) => {
         const sites = new Set<string>(current.disabledSites || []);
         if (siteBlockToggle.checked) sites.delete(site);
         else sites.add(site);
-        chrome.storage.sync.set({ disabledSites: Array.from(sites) });
+        chrome.storage.sync.set({ disabledSites: Array.from(sites) }, updateProtectionState);
       });
     });
   });
+
+  function updateProtectionState() {
+    const globalEnabled = autoHideToggle.checked;
+    const siteEnabled = !siteBlockToggle.disabled && siteBlockToggle.checked;
+    const enabled = globalEnabled && siteEnabled;
+
+    protectionCard.classList.toggle("off", !enabled);
+    statusIcon.textContent = enabled ? "✓" : "–";
+    statusLabel.textContent = enabled ? "Protection is on" : "Protection is off";
+
+    if (siteBlockToggle.disabled) {
+      statusDetail.textContent = "Protection is unavailable on browser-internal pages.";
+    } else if (!globalEnabled) {
+      statusDetail.textContent = "Automatic ad detection is turned off globally.";
+    } else if (!siteEnabled) {
+      statusDetail.textContent = "Ads are allowed on this site.";
+    } else {
+      statusDetail.textContent = "Ads are automatically detected and hidden.";
+    }
+  }
 
   function getSiteKey(url?: string) {
     try {
@@ -71,69 +99,50 @@ document.addEventListener("DOMContentLoaded", () => {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       const activeTab = tabs[0];
       if (!activeTab?.id) return;
-      
-      // 1. Initial Heuristic Guess based on active URL
+
       const urlStr = activeTab.url || "";
-      let initialCategory = "General Site";
-      let matchedHeuristics = false;
+      let fallbackCategory = "General";
       try {
         const host = new URL(urlStr).hostname.toLowerCase();
-        const movieKeywords = STREAMING_KEYWORDS;
-        const comicKeywords = COMIC_KEYWORDS;
-        
-        if (movieKeywords.some(kw => host.includes(kw))) {
-          initialCategory = "🎬 Movie Streaming (Heuristic)";
-          matchedHeuristics = true;
-        } else if (comicKeywords.some(kw => host.includes(kw))) {
-          initialCategory = "📖 Comic/Manga (Heuristic)";
-          matchedHeuristics = true;
-        }
+        if (STREAMING_KEYWORDS.some((kw) => host.includes(kw))) fallbackCategory = "Streaming";
+        else if (COMIC_KEYWORDS.some((kw) => host.includes(kw))) fallbackCategory = "Comics";
       } catch {}
 
-      if (matchedHeuristics) {
-        aiCategoryText.textContent = initialCategory;
-        aiCategoryBadge.style.display = "flex";
-      } else {
-        // Show loading/analyzing state for general sites
-        aiCategoryText.textContent = "🔍 Analyzing page layout...";
-        aiCategoryBadge.style.display = "flex";
-      }
+      aiCategoryText.textContent = fallbackCategory;
 
-      // 2. Query Background service worker for CLIP AI zero-shot classification
       chrome.runtime.sendMessage({ type: "getTabCategory", tabId: activeTab.id }, (res) => {
-        if (res && res.category && res.confidence > 0) {
-          let categoryEmoji = "🌐";
-          if (res.category === "Movie Streaming") categoryEmoji = "🎬";
-          else if (res.category === "Comic/Manga") categoryEmoji = "📖";
-          else if (res.category === "News/Articles") categoryEmoji = "📰";
-          else if (res.category === "Developer Page") categoryEmoji = "💻";
-          else if (res.category === "E-Commerce") categoryEmoji = "🛒";
-          else if (res.category === "Search Engine") categoryEmoji = "🔍";
-
-          aiCategoryText.textContent = `${categoryEmoji} ${res.category} (${res.confidence}% AI)`;
-          aiCategoryBadge.style.display = "flex";
-        } else if (!matchedHeuristics) {
-          // If no heuristics and no AI result yet, show General Site
-          aiCategoryText.textContent = "🌐 General Site";
-          aiCategoryBadge.style.display = "flex";
+        if (res?.category && res.confidence > 0) {
+          const shortLabels: Record<string, string> = {
+            "Movie Streaming": "Streaming",
+            "Comic/Manga": "Comics",
+            "News/Articles": "News",
+            "Developer Page": "Developer",
+            "E-Commerce": "Shopping",
+            "Search Engine": "Search",
+            "General Site": "General",
+          };
+          aiCategoryText.textContent = shortLabels[res.category] || res.category;
+          aiCategoryText.title = `${res.category} · ${res.confidence}% confidence`;
         }
       });
     });
   }
 
   clearHistoryBtn.addEventListener("click", () => {
-    chrome.storage.local.set({ adBlockHistory: [] }, () => {
-      renderHistory([]);
-    });
+    chrome.storage.local.set({ adBlockHistory: [] }, () => renderHistory([]));
   });
 
   function loadAdHistory() {
-    chrome.storage.local.get(["adBlockHistory"], (res) => {
-      renderHistory(res.adBlockHistory || []);
-    });
+    chrome.storage.local.get(["adBlockHistory"], (res) => renderHistory(res.adBlockHistory || []));
   }
 
   function renderHistory(history: any[]) {
+    const totalBlocks = history.reduce((sum, ad) => sum + (Number(ad.count) || 1), 0);
+    historySummary.textContent = totalBlocks > 0
+      ? `${totalBlocks} block${totalBlocks === 1 ? "" : "s"} recorded`
+      : "No recent blocks";
+    clearHistoryBtn.disabled = history.length === 0;
+
     if (history.length === 0) {
       emptyHistoryState.style.display = "flex";
       historyListContainer.innerHTML = "";
@@ -147,33 +156,40 @@ document.addEventListener("DOMContentLoaded", () => {
     history.forEach((ad) => {
       const item = document.createElement("div");
       item.className = "ad-item";
-      item.style.flexDirection = "column";
-      item.style.alignItems = "stretch";
-      item.style.gap = "4px";
 
-      let pageDomain = "unknown";
-      try {
-        pageDomain = new URL(ad.pageUrl).hostname;
-      } catch {}
+      let pageDomain = "unknown page";
+      try { pageDomain = new URL(ad.pageUrl).hostname; } catch {}
 
-      item.innerHTML = `
-        <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
-          <span class="ad-domain" style="font-size: 12px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${ad.url}">
-            ${ad.domain}
-          </span>
-          <span style="font-size: 11px; font-weight: bold; background: var(--bg-tertiary); color: var(--accent-color); padding: 2px 8px; border-radius: 10px; white-space: nowrap;">
-            Blocked: ${ad.count}
-          </span>
-        </div>
-        <div style="font-size: 11px; color: var(--text-secondary); text-overflow: ellipsis; overflow: hidden; white-space: nowrap; width: 100%;">
-          <strong>Page:</strong> ${pageDomain}
-        </div>
-        <div style="font-size: 10px; color: #64748b; text-align: right; width: 100%; margin-top: 2px;">
-          Last: ${new Date(ad.timestamp).toLocaleTimeString()}
-        </div>
-      `;
+      const info = document.createElement("div");
+      info.className = "ad-item-info";
+
+      const domain = document.createElement("span");
+      domain.className = "ad-domain";
+      domain.textContent = ad.domain || "Unknown source";
+      domain.title = ad.url || "";
+
+      const meta = document.createElement("span");
+      meta.className = "ad-meta";
+      meta.textContent = `${pageDomain} · blocked ${ad.count || 1}×`;
+
+      info.append(domain, meta);
+
+      const time = document.createElement("span");
+      time.className = "ad-meta";
+      time.textContent = formatRelativeTime(ad.timestamp);
+
+      item.append(info, time);
       historyListContainer.appendChild(item);
     });
+  }
+
+  function formatRelativeTime(timestamp: number) {
+    const diffMinutes = Math.max(0, Math.round((Date.now() - Number(timestamp || 0)) / 60000));
+    if (diffMinutes < 1) return "now";
+    if (diffMinutes < 60) return `${diffMinutes}m`;
+    const hours = Math.round(diffMinutes / 60);
+    if (hours < 24) return `${hours}h`;
+    return `${Math.round(hours / 24)}d`;
   }
 
   function loadTabAds() {
@@ -193,6 +209,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function renderAds(ads: any[]) {
     adCountBadge.textContent = String(ads.length);
+    adCountSummary.textContent = String(ads.length);
 
     if (ads.length === 0) {
       emptyState.style.display = "flex";
@@ -213,45 +230,46 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const domain = document.createElement("span");
       domain.className = "ad-domain";
-      domain.textContent = `${ad.domain} (${ad.width}x${ad.height})`;
+      domain.textContent = ad.domain || "Unknown ad source";
 
       const meta = document.createElement("span");
       meta.className = "ad-meta";
-      meta.textContent = `${ad.method} • ${ad.confidence}% confidence`;
+      const dimensions = ad.width && ad.height ? ` · ${ad.width}×${ad.height}` : "";
+      meta.textContent = `${ad.confidence || 0}% confidence${dimensions}`;
+      meta.title = ad.method || "Ad detection";
 
-      info.appendChild(domain);
-      info.appendChild(meta);
+      info.append(domain, meta);
 
       const toggleBtn = document.createElement("button");
-      toggleBtn.className = `btn-toggle-ad ${ad.isHidden ? "hidden" : "visible"}`;
-      toggleBtn.textContent = ad.isHidden ? "Unhide" : "Hide";
+      toggleBtn.type = "button";
+      updateAdButton(toggleBtn, ad.isHidden);
 
       toggleBtn.addEventListener("click", () => {
         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
           const activeTab = tabs[0];
           if (!activeTab?.id) return;
 
-          chrome.tabs.sendMessage(
-            activeTab.id,
-            {
-              type: "toggleAdVisibility",
-              adId: ad.id,
-              hide: !ad.isHidden,
-            },
-            (res) => {
-              if (res?.success) {
-                ad.isHidden = res.isHidden;
-                toggleBtn.className = `btn-toggle-ad ${ad.isHidden ? "hidden" : "visible"}`;
-                toggleBtn.textContent = ad.isHidden ? "Unhide" : "Hide";
-              }
+          chrome.tabs.sendMessage(activeTab.id, {
+            type: "toggleAdVisibility",
+            adId: ad.id,
+            hide: !ad.isHidden,
+          }, (res) => {
+            if (res?.success) {
+              ad.isHidden = res.isHidden;
+              updateAdButton(toggleBtn, ad.isHidden);
             }
-          );
+          });
         });
       });
 
-      item.appendChild(info);
-      item.appendChild(toggleBtn);
+      item.append(info, toggleBtn);
       adListContainer.appendChild(item);
     });
+  }
+
+  function updateAdButton(button: HTMLButtonElement, hidden: boolean) {
+    button.className = `btn-toggle-ad ${hidden ? "hidden" : "visible"}`;
+    button.textContent = hidden ? "Show" : "Hide";
+    button.title = hidden ? "Temporarily show this item" : "Hide this item";
   }
 });

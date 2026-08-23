@@ -47,7 +47,7 @@ html, body { overflow-x: clip; }
 
 body {
   margin: 0;
-  width: min(390px, 100vw);
+  width: 390px;
   max-height: 600px;
   overflow-y: auto;
   background: var(--color-canvas);

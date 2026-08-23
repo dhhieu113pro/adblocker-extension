@@ -293,7 +293,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                       success: true,
                       isAd: isAdFromAI || heuristics.isAd,
                       confidence: Math.max(aiConfidence, heuristics.confidence),
-                      method: "CLIP Zero-Shot AI + Heuristics",
+                      method: selectedModel === "mobilenet"
+                        ? "MobileNetV4 Image Classification + Heuristics"
+                        : "CLIP Zero-Shot AI + Heuristics",
                       reasons: [
                         `AI Classification: "${topResult.label}" (${aiConfidence}%)`,
                         ...heuristics.reasons,
@@ -534,10 +536,33 @@ chrome.webNavigation.onCompleted.addListener((details) => {
     return;
   }
 
-  // Delay slightly to let the page render before capturing
+  // Delay slightly to let the page render before capturing.
   setTimeout(() => {
-    chrome.tabs.get(tabId, (tab) => {
+    chrome.tabs.get(tabId, async (tab) => {
       if (chrome.runtime.lastError || !tab || !tab.active || tab.status === "loading") return;
+
+      const modelSettings = await chrome.storage.sync.get("visionModel");
+      const selectedModel = modelSettings.visionModel || "mobilenet";
+
+      // Whole-page zero-shot classification is a CLIP-only feature. MobileNet
+      // remains image-only and uses URL/domain heuristics for page categories.
+      if (selectedModel !== "clip") {
+        const category = isStreamingKeywordSite(url) ? "Movie Streaming" : "General Site";
+        tabCategories.set(tabId, { category, confidence: 0 });
+
+        chrome.scripting.executeScript({
+          target: { tabId },
+          func: (cat) => {
+            (window as any).__adblockerTabCategory = cat;
+            window.dispatchEvent(new CustomEvent("adblockerCategoryUpdated", { detail: cat }));
+          },
+          args: [category],
+          world: "MAIN"
+        }).catch(() => {
+          // Ignore errors if the tab is reloaded/closed.
+        });
+        return;
+      }
 
       chrome.tabs.captureVisibleTab(tab.windowId, { format: "jpeg", quality: 30 }, async (dataUrl) => {
         if (chrome.runtime.lastError || !dataUrl) {

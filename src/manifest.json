@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AI Vision Ad Blocker",
-  "version": "1.0.11",
+  "version": "1.0.12",
   "description": "Smart AI-Powered Visual & Heuristic Ad Blocker using CLIP Open-Vocabulary Zero-Shot Vision & Heuristic Rules Engine",
   "permissions": [
     "activeTab",
@@ -10,17 +10,17 @@
     "storage",
     "contextMenus",
     "webNavigation",
-        "tabs",
-        "declarativeNetRequest"
-      ],
+    "tabs",
+    "declarativeNetRequest"
+  ],
   "host_permissions": [
     "<all_urls>",
     "https://raw.githubusercontent.com/*"
   ],
   "background": {
-      "service_worker": "background.ts",
-      "type": "module"
-    },
+    "service_worker": "background.ts",
+    "type": "module"
+  },
   "content_scripts": [
     {
       "matches": [

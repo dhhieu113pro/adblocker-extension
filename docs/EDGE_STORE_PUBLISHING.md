@@ -1,6 +1,6 @@
 # Microsoft Edge Store publishing
 
-Microsoft Edge Add-ons updates are published automatically from GitHub Actions when a tag ends with `-edge`.
+Microsoft Edge Add-ons publishing is part of the unified Chromium release. A single `vX.Y.Z` tag builds one tested ZIP and reuses that same package for GitHub Releases, Microsoft Edge Add-ons, and the Chrome Web Store.
 
 ## Required GitHub Actions secrets
 
@@ -12,37 +12,31 @@ Create these repository secrets in **Settings → Secrets and variables → Acti
 
 The first Edge Add-ons product/listing must already exist in Partner Center. The API updates an existing product; it does not create the first listing.
 
-## Tag format
+## Release trigger
 
-The tag must end in `-edge` and its version must match `src/manifest.json`.
+Edge publishing is part of the unified Chromium release. There is no `-edge` tag.
 
-Example when the manifest version is `1.0.12`:
+For version `1.0.12`, `src/manifest.json` and `package.json` must both contain `1.0.12`, then push exactly one tag:
 
 ```bash
-git tag v1.0.12-edge
-git push origin v1.0.12-edge
+git tag v1.0.12
+git push origin v1.0.12
 ```
 
-A mismatched tag such as `v1.0.13-edge` while the manifest still says `1.0.12` fails before upload.
+The unified release builds one ZIP once. The Edge workflow downloads that exact package artifact and submits it to the existing Edge Add-ons product.
 
 ## Edge release pipeline
 
-The `Publish Microsoft Edge Store` workflow performs:
+The reusable `Publish Microsoft Edge Store` workflow performs only store-specific work:
 
-1. `npm ci`
-2. Unit tests with the 100% coverage gate
-3. Extension build
-4. Playwright Chromium installation
-5. Real installed-extension E2E tests
-6. Tag / manifest version validation
-7. ZIP packaging of `dist/`
-8. Upload to Microsoft Edge Add-ons
-9. Poll package validation until `Succeeded` or `Failed`
-10. Submit the validated draft for certification
-11. Poll submission creation until `Succeeded` or `Failed`
+1. Download the unified release ZIP created by `release.yml`.
+2. Validate the downloaded package exists and its manifest version matches the release version.
+3. Validate `EDGE_CLIENT_ID`, `EDGE_API_KEY`, and `EDGE_PRODUCT_ID`.
+4. Upload the package to Microsoft Edge Add-ons.
+5. Poll package validation until `Succeeded` or `Failed`.
+6. Submit the validated draft for certification.
+7. Poll submission creation until `Succeeded` or `Failed`.
 
-A successful workflow means Microsoft accepted the update as a Store submission. Microsoft certification/review may continue after the workflow completes.
+Tests, Playwright, the production build, and ZIP packaging happen once in the unified release build job before any store-specific publishing begins.
 
-## Other release tags
-
-Tags matching `v*` that do **not** end in `-edge` continue to use the normal GitHub release workflow.
+A successful Edge job means Microsoft accepted the update as a Store submission. Microsoft certification/review may continue after the workflow completes.

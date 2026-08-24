@@ -1,6 +1,6 @@
 # 🛡️ AI Vision & Heuristic Ad Blocker
 
-An intelligent, on-device Chrome Extension that blocks advertisements using a **hybrid engine** combining fast heuristics with a local **CLIP Zero-Shot Vision Transformer (ViT)** running in WebAssembly.
+An intelligent, on-device Chromium extension for Google Chrome, Microsoft Edge, Brave, and compatible Chromium browsers. It blocks advertisements using a **hybrid engine** combining fast heuristics with a local **CLIP Zero-Shot Vision Transformer (ViT)** running in WebAssembly.
 
 ---
 
@@ -65,7 +65,7 @@ sequenceDiagram
 > **Request-level blocking** is handled separately: `background.ts` installs dynamic `declarativeNetRequest` rules that block known ad domains at the network layer, so `window.open`-style popups never get a chance to render.
 
 ### 1. Zero-Shot Image Classification
-The extension uses Apple/OpenAI's **CLIP** model (`Xenova/clip-vit-base-patch16-224`) inside a Chrome Offscreen Document. It dynamically tests images against these candidate labels:
+The extension uses Apple/OpenAI's **CLIP** model (`Xenova/clip-vit-base-patch16-224`) inside a Chromium Offscreen Document. It dynamically tests images against these candidate labels:
 *   `"gambling advertisement banner"`
 *   `"promotional ad banner"`
 *   `"sports betting banner"`
@@ -73,7 +73,15 @@ The extension uses Apple/OpenAI's **CLIP** model (`Xenova/clip-vit-base-patch16-
 
 ---
 
-## 📦 Installation & Setup
+## Install
+
+- **Google Chrome / Brave:** install from the Chrome Web Store listing.
+- **Microsoft Edge:** install from Microsoft Edge Add-ons.
+- **Generic Chromium / development:** download the GitHub Release ZIP or build locally and load `dist/` as an unpacked extension.
+
+All channels use the same extension version and the same release package. A single `vX.Y.Z` Git tag drives GitHub, Edge, and Chrome publishing.
+
+## 📦 Local Development & Setup
 
 ### Prerequisites
 *   Node.js 20+
@@ -101,11 +109,11 @@ For production (bundles and copies WASM dependencies):
 npm run build
 ```
 
-### 4. Load into Chrome
-1.  Open Chrome and navigate to `chrome://extensions/`.
-2.  Enable **Developer mode** (toggle in the top-right corner).
-3.  Click **Load unpacked** (top-left corner).
-4.  Select the `dist/` directory from this project folder.
+### 4. Load unpacked
+1. Open your Chromium browser's extensions page (for Chrome: `chrome://extensions/`).
+2. Enable **Developer mode**.
+3. Click **Load unpacked**.
+4. Select the `dist/` directory from this project folder.
 
 ### Remote ad rules
 
@@ -128,7 +136,7 @@ To publish a rule update, edit `rules/ad-rules.json`, commit it, and push it to 
 ## 💡 How to Use
 
 ### Automatic Ad Blocking
-*   Once loaded, the extension actively monitors the active tab. 
+*   Once loaded, the extension actively monitors the active tab.
 *   Standard ad banners, promotional skyscrapers, and ad iframes will be blocked and hidden automatically.
 *   Dynamically injected banners and CSS-based takeover ads are rescanned when their containers, classes, or lazy-loaded URLs change.
 

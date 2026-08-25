@@ -102,16 +102,3 @@ jobs:
       EDGE_CLIENT_ID: ${{ secrets.EDGE_CLIENT_ID }}
       EDGE_API_KEY: ${{ secrets.EDGE_API_KEY }}
       EDGE_PRODUCT_ID: ${{ secrets.EDGE_PRODUCT_ID }}
-
-  chrome-store:
-    needs: build
-    uses: ./.github/workflows/chrome-store.yml
-    with:
-      version: ${{ needs.build.outputs.version }}
-      artifact_name: ${{ needs.build.outputs.artifact_name }}
-      package_filename: ${{ needs.build.outputs.package_filename }}
-    secrets:
-      CHROME_SERVICE_ACCOUNT_JSON: ${{ secrets.CHROME_SERVICE_ACCOUNT_JSON }}
-      CHROME_SERVICE_ACCOUNT_EMAIL: ${{ secrets.CHROME_SERVICE_ACCOUNT_EMAIL }}
-      CHROME_PUBLISHER_ID: ${{ secrets.CHROME_PUBLISHER_ID }}
-      CHROME_EXTENSION_ID: ${{ secrets.CHROME_EXTENSION_ID }}

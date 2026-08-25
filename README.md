@@ -75,11 +75,11 @@ The extension uses Apple/OpenAI's **CLIP** model (`Xenova/clip-vit-base-patch16-
 
 ## Install
 
-- **Google Chrome / Brave:** install from the Chrome Web Store listing.
+- **Google Chrome / Brave:** download the GitHub Release ZIP or build locally and load `dist/` as an unpacked extension.
 - **Microsoft Edge:** install from Microsoft Edge Add-ons.
 - **Generic Chromium / development:** download the GitHub Release ZIP or build locally and load `dist/` as an unpacked extension.
 
-All channels use the same extension version and the same release package. A single `vX.Y.Z` Git tag drives GitHub, Edge, and Chrome publishing.
+All supported Chromium browsers use the same extension package. A single `vX.Y.Z` Git tag drives the GitHub Release and Microsoft Edge publishing.
 
 ## 📦 Local Development & Setup
 

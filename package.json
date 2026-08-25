@@ -1,6 +1,6 @@
 {
   "name": "webllm-adblocker-extension",
-  "version": "1.0.12",
+  "version": "0.1.13",
   "description": "AI-Powered Visual & Heuristic Ad Blocker Chromium Extension using CLIP Zero-Shot Classification & Offscreen WASM",
   "scripts": {
     "dev": "parcel watch src/manifest.json --config @parcel/config-webextension --no-source-maps",

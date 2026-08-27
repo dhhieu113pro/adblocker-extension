@@ -48,6 +48,24 @@ test("Chrome Store build packages stable runtime scripts and internal offscreen 
   assert.equal(packageLock.packages?.[""]?.version, "0.1.14");
 });
 
+test("background synchronizes optional access and runtime scripts are injection-safe", () => {
+  const background = readText("src/background.ts");
+  const content = readText("src/content.js");
+  const inject = readText("src/inject.ts");
+
+  assert.match(background, /syncFullProtectionRegistration/);
+  assert.match(background, /chrome\.permissions\.onAdded/);
+  assert.match(background, /chrome\.permissions\.onRemoved/);
+  assert.match(background, /chrome\.scripting\.executeScript/);
+  assert.match(background, /runtime\/inject\.js/);
+  assert.match(background, /runtime\/content\.js/);
+  assert.match(background, /activateFullProtectionOnTab/);
+  assert.match(background, /fullProtectionDisabled/);
+  assert.match(content, /__aiVisionAdBlockerContentInitialized/);
+  assert.match(content, /fullProtectionDisabled/);
+  assert.match(inject, /__aiVisionAdBlockerMainInitialized/);
+});
+
 test("offscreen inference resolves ONNX runtime WASM from the extension package", () => {
   const source = readText("src/offscreen.ts");
 

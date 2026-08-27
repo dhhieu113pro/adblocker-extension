@@ -38,6 +38,7 @@ test('MAIN-world popup and click interception combines global and per-site state
   const inject = read('src/inject.ts');
 
   assert.match(inject, /import \{ isAutomaticProtectionEnabled \} from "\.\/protection-state\.mjs";/);
+  assert.match(inject, /let siteBlockingEnabled = false;/);
   assert.match(inject, /chrome\.storage\.sync\.get\(\["autoHideAds", "disabledSites"\],/);
   assert.match(inject, /isAutomaticProtectionEnabled\(settings, window\.location\.href\)/);
   assert.match(inject, /changes\.autoHideAds \|\| changes\.disabledSites/);

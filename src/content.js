@@ -1,5 +1,6 @@
 // AI Vision & Heuristic Ad Blocker Content Script
 import { isHardAdNetwork, AD_CONTAINER_SELECTORS, loadRemoteAdRules } from "./shared";
+import { shouldRemoveTransparentAdOverlay } from "./transparent-ad-overlay-policy.mjs";
 
 class AdBlockerOverlay {
   constructor() {
@@ -531,11 +532,27 @@ class AdBlockerOverlay {
       if (!(isBgTransparent || parseFloat(style.opacity || "1") < 0.1) || style.pointerEvents === "none") return;
       const text = (el.innerText || el.textContent || "").trim();
       if (text.length > 30) return;
-      if (el.querySelectorAll("input, button, select, textarea, form, a[href]").length > 2) return;
-      console.warn("[AdBlocker] Detected transparent clickjacking overlay:", el);
+      const interactiveDescendantCount = el.querySelectorAll("input, button, select, textarea, form, a[href]").length;
+      if (interactiveDescendantCount > 2) return;
+      if (!shouldRemoveTransparentAdOverlay({
+        id: el.id || "",
+        className: (el.className || "").toString(),
+        position: style.position,
+        zIndex,
+        width: rect.width,
+        height: rect.height,
+        viewWidth,
+        viewHeight,
+        backgroundColor: style.backgroundColor,
+        opacity: parseFloat(style.opacity || "1"),
+        pointerEvents: style.pointerEvents,
+        textLength: text.length,
+        interactiveDescendantCount,
+      })) return;
+      console.debug("[AdBlocker] Detected transparent ad overlay:", el);
       el.dataset.webllmClickjacker = "processed";
       el.style.setProperty("pointer-events", "none", "important");
-      try { el.remove(); console.log("[AdBlocker] Removed clickjacking overlay from DOM."); }
+      try { el.remove(); console.debug("[AdBlocker] Removed transparent ad overlay from DOM."); }
       catch (e) { el.style.setProperty("display", "none", "important"); }
     });
   }

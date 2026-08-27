@@ -289,10 +289,6 @@ test('granting full site access enables DOM protection and revocation returns to
   const popup = await openPopup();
   await grantFullSiteAccess(popup);
 
-  await popup.reload();
-  await expect(popup.getByRole('button', { name: 'Enable full protection' })).toBeHidden();
-  await expect(popup.locator('#status-label')).toHaveText('Protection is on');
-
   const protectedPage = await context.newPage();
   await protectedPage.goto(baseUrl);
   await expect(protectedPage.locator('#normal-content')).toBeVisible();
@@ -300,6 +296,11 @@ test('granting full site access enables DOM protection and revocation returns to
     hidden: el.dataset.webllmAdHidden,
     display: getComputedStyle(el).display,
   }))).toEqual({ hidden: 'true', display: 'none' });
+
+  await protectedPage.bringToFront();
+  await popup.reload();
+  await expect(popup.getByRole('button', { name: 'Enable full protection' })).toBeHidden();
+  await expect(popup.locator('#status-label')).toHaveText('Protection is on');
 
   await revokeFullSiteAccess(popup);
   await expect(popup.locator('#status-label')).toHaveText('Basic protection is on');

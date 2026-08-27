@@ -81,3 +81,27 @@ test('disabling protection restores JW Player audio immediately', () => {
   assert.match(restore, /video\.volume = state\.volume;/);
   assert.match(restore, /this\.jwMutedVideos\.clear\(\);/);
 });
+
+test('long-running page classification revalidates tab URL and bypass state before acting', () => {
+  const background = read('src/background.ts');
+  assert.match(background, /async function isTabStillProtected\(tabId: number, expectedUrl: string\)/);
+
+  const helper = section(background, 'async function isTabStillProtected', '// --- Per-image CLIP result cache');
+  assert.match(helper, /await chrome\.tabs\.get\(tabId\)/);
+  assert.match(helper, /currentTab\.url !== expectedUrl/);
+  assert.match(helper, /return isProtectionEnabledForUrl\(currentTab\.url\)/);
+
+  const popupDecision = section(background, 'if (isAdPage && topMatch.score >= 0.50) {', 'return; // Popup tab closed, terminate chain');
+  assert.match(popupDecision, /await isTabStillProtected\(tabId, url\)/);
+  assert.ok(
+    popupDecision.indexOf('await isTabStillProtected(tabId, url)') < popupDecision.indexOf('chrome.tabs.remove(tabId)'),
+    'popup protection state must be rechecked before closing the tab',
+  );
+
+  const categoryCommit = section(background, 'console.log(`[AdBlocker] AI Classified tab', '// Push category directly to inject.ts MAIN world context');
+  assert.match(categoryCommit, /await isTabStillProtected\(tabId, url\)/);
+  assert.ok(
+    categoryCommit.indexOf('await isTabStillProtected(tabId, url)') < categoryCommit.indexOf('tabCategories.set(tabId'),
+    'protection state must be rechecked before committing the category',
+  );
+});

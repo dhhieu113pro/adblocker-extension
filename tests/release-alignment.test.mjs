@@ -12,9 +12,12 @@ function readText(relativePath) {
 
 test("release metadata targets v0.1.14", () => {
   const packageJson = readJson("../package.json");
+  const packageLock = readJson("../package-lock.json");
   const manifest = readJson("../src/manifest.json");
 
   assert.equal(packageJson.version, "0.1.14");
+  assert.equal(packageLock.version, "0.1.14");
+  assert.equal(packageLock.packages[""].version, "0.1.14");
   assert.equal(manifest.version, "0.1.14");
 });
 

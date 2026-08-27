@@ -40,7 +40,7 @@ async function getMobileNetClassifier() {
   try {
     mobileNetClassifier = await pipeline(
       "image-classification",
-      "onnx-community/mobilenetv4_conv_small.e2400_r224_in1k"
+      "Xenova/dit-base-finetuned-rvlcdip"
     );
     return mobileNetClassifier;
   } finally {

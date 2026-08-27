@@ -8,6 +8,7 @@ let extensionId;
 let popupPath;
 let server;
 let baseUrl;
+let localhostUrl;
 
 async function waitForExtensionServiceWorker(ctx) {
   let workers = ctx.serviceWorkers();
@@ -54,8 +55,20 @@ async function grantFullSiteAccess(popup) {
   await expect.poll(async () => popup.evaluate(async (origins) => chrome.permissions.contains({ origins }), FULL_SITE_ORIGINS)).toBe(true);
 }
 
+async function ensureFullSiteAccess(popup) {
+  const alreadyGranted = await popup.evaluate(async (origins) => chrome.permissions.contains({ origins }), FULL_SITE_ORIGINS);
+  if (!alreadyGranted) await grantFullSiteAccess(popup);
+}
+
 async function readDynamicRules(popup) {
   return popup.evaluate(async () => chrome.declarativeNetRequest.getDynamicRules());
+}
+
+async function readHiddenState(page) {
+  return page.locator('#adbro').evaluate((el) => ({
+    hidden: el.dataset.webllmAdHidden,
+    display: getComputedStyle(el).display,
+  }));
 }
 
 test.beforeAll(async () => {
@@ -86,6 +99,7 @@ test.beforeAll(async () => {
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
   baseUrl = `http://127.0.0.1:${address.port}`;
+  localhostUrl = `http://localhost:${address.port}`;
 });
 
 test.afterAll(async () => {
@@ -97,14 +111,11 @@ test('global protection off immediately restores the page and removes all DNR bl
   const popup = await openPopup();
   await popup.evaluate(() => chrome.storage.sync.set({ autoHideAds: true, disabledSites: [] }));
   await popup.reload();
-  await grantFullSiteAccess(popup);
+  await ensureFullSiteAccess(popup);
 
   const page = await context.newPage();
   await page.goto(baseUrl);
-  await expect.poll(async () => page.locator('#adbro').evaluate((el) => ({
-    hidden: el.dataset.webllmAdHidden,
-    display: getComputedStyle(el).display,
-  }))).toEqual({ hidden: 'true', display: 'none' });
+  await expect.poll(async () => readHiddenState(page)).toEqual({ hidden: 'true', display: 'none' });
 
   await expect.poll(async () => (await readDynamicRules(popup)).length).toBeGreaterThan(0);
 
@@ -115,19 +126,56 @@ test('global protection off immediately restores the page and removes all DNR bl
 
   await expect.poll(async () => popup.evaluate(async () => (await chrome.storage.sync.get('autoHideAds')).autoHideAds)).toBe(false);
   await expect.poll(async () => (await readDynamicRules(popup)).length).toBe(0);
-  await expect.poll(async () => page.locator('#adbro').evaluate((el) => ({
-    hidden: el.dataset.webllmAdHidden,
-    display: getComputedStyle(el).display,
-  }))).toEqual({ hidden: undefined, display: 'block' });
+  await expect.poll(async () => readHiddenState(page)).toEqual({ hidden: undefined, display: 'block' });
 
   await autoHideSlider.click();
   await expect.poll(async () => popup.evaluate(async () => (await chrome.storage.sync.get('autoHideAds')).autoHideAds)).toBe(true);
   await expect.poll(async () => (await readDynamicRules(popup)).length).toBeGreaterThan(0);
-  await expect.poll(async () => page.locator('#adbro').evaluate((el) => ({
-    hidden: el.dataset.webllmAdHidden,
-    display: getComputedStyle(el).display,
-  }))).toEqual({ hidden: 'true', display: 'none' });
+  await expect.poll(async () => readHiddenState(page)).toEqual({ hidden: 'true', display: 'none' });
 
   await page.close();
+  await popup.close();
+});
+
+test('per-site protection off bypasses only that site and keeps permission granted', async () => {
+  const popup = await openPopup();
+  await popup.evaluate(() => chrome.storage.sync.set({ autoHideAds: true, disabledSites: [] }));
+  await popup.reload();
+  await ensureFullSiteAccess(popup);
+
+  const allowedPage = await context.newPage();
+  await allowedPage.goto(localhostUrl);
+  await expect.poll(async () => readHiddenState(allowedPage)).toEqual({ hidden: 'true', display: 'none' });
+
+  await allowedPage.bringToFront();
+  await popup.reload();
+  await expect(popup.locator('#current-site')).toHaveText('localhost');
+  const siteToggle = popup.locator('#site-block-toggle');
+  const siteSlider = siteToggle.locator('xpath=following-sibling::*[contains(@class,"toggle-slider")]');
+  await expect(siteToggle).toBeChecked();
+  await siteSlider.click();
+
+  await expect.poll(async () => popup.evaluate(async () => (await chrome.storage.sync.get('disabledSites')).disabledSites)).toContain('localhost');
+  await expect.poll(async () => readHiddenState(allowedPage)).toEqual({ hidden: undefined, display: 'block' });
+  await expect.poll(async () => {
+    const rules = await readDynamicRules(popup);
+    return rules.length > 0 && rules.every((rule) => rule.condition.excludedInitiatorDomains?.includes('localhost'));
+  }).toBe(true);
+
+  const protectedPage = await context.newPage();
+  await protectedPage.goto(baseUrl);
+  await expect.poll(async () => readHiddenState(protectedPage)).toEqual({ hidden: 'true', display: 'none' });
+  await expect.poll(async () => popup.evaluate(async (origins) => chrome.permissions.contains({ origins }), FULL_SITE_ORIGINS)).toBe(true);
+
+  await siteSlider.click();
+  await expect.poll(async () => popup.evaluate(async () => (await chrome.storage.sync.get('disabledSites')).disabledSites || [])).not.toContain('localhost');
+  await expect.poll(async () => {
+    const rules = await readDynamicRules(popup);
+    return rules.length > 0 && rules.every((rule) => !(rule.condition.excludedInitiatorDomains || []).includes('localhost'));
+  }).toBe(true);
+  await expect.poll(async () => readHiddenState(allowedPage)).toEqual({ hidden: 'true', display: 'none' });
+
+  await protectedPage.close();
+  await allowedPage.close();
   await popup.close();
 });

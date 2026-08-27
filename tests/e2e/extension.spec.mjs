@@ -86,15 +86,51 @@ async function openPopup() {
 }
 
 const FULL_SITE_ORIGINS = ['http://*/*', 'https://*/*'];
+const FULL_PROTECTION_SCRIPT_IDS = ['ai-vision-content', 'ai-vision-main'];
+
+async function openExtensionsManager() {
+  const manager = await context.newPage();
+  await manager.goto(`chrome://extensions/?id=${extensionId}`);
+  await manager.waitForFunction(() => Boolean(chrome.developerPrivate?.addHostPermission && chrome.developerPrivate?.removeHostPermission));
+  return manager;
+}
 
 async function grantFullSiteAccess(popup) {
-  const granted = await popup.evaluate(async (origins) => chrome.permissions.request({ origins }), FULL_SITE_ORIGINS);
-  expect(granted).toBe(true);
+  const manager = await openExtensionsManager();
+  try {
+    await manager.evaluate(async ({ id, origins }) => {
+      for (const origin of origins) {
+        await chrome.developerPrivate.addHostPermission(id, origin);
+      }
+    }, { id: extensionId, origins: FULL_SITE_ORIGINS });
+  } finally {
+    await manager.close();
+  }
+
+  await expect.poll(async () => popup.evaluate(async (origins) => chrome.permissions.contains({ origins }), FULL_SITE_ORIGINS)).toBe(true);
+  await expect.poll(async () => popup.evaluate(async (ids) => {
+    const registrations = await chrome.scripting.getRegisteredContentScripts({ ids });
+    return registrations.map((item) => item.id).sort();
+  }, FULL_PROTECTION_SCRIPT_IDS)).toEqual([...FULL_PROTECTION_SCRIPT_IDS].sort());
 }
 
 async function revokeFullSiteAccess(popup) {
-  const removed = await popup.evaluate(async (origins) => chrome.permissions.remove({ origins }), FULL_SITE_ORIGINS);
-  expect(removed).toBe(true);
+  const manager = await openExtensionsManager();
+  try {
+    await manager.evaluate(async ({ id, origins }) => {
+      for (const origin of origins) {
+        await chrome.developerPrivate.removeHostPermission(id, origin);
+      }
+    }, { id: extensionId, origins: FULL_SITE_ORIGINS });
+  } finally {
+    await manager.close();
+  }
+
+  await expect.poll(async () => popup.evaluate(async (origins) => chrome.permissions.contains({ origins }), FULL_SITE_ORIGINS)).toBe(false);
+  await expect.poll(async () => popup.evaluate(async (ids) => {
+    const registrations = await chrome.scripting.getRegisteredContentScripts({ ids });
+    return registrations.map((item) => item.id).sort();
+  }, FULL_PROTECTION_SCRIPT_IDS)).toEqual([]);
 }
 
 test('keeps browser action width fixed when the initial viewport is narrow', async () => {

@@ -12,13 +12,17 @@ function readText(relativePath) {
 
 test("release metadata targets v0.1.14", () => {
   const packageJson = readJson("../package.json");
-  const packageLock = readJson("../package-lock.json");
   const manifest = readJson("../src/manifest.json");
 
   assert.equal(packageJson.version, "0.1.14");
+  assert.equal(manifest.version, "0.1.14");
+});
+
+test("lockfile metadata targets v0.1.14", () => {
+  const packageLock = readJson("../package-lock.json");
+
   assert.equal(packageLock.version, "0.1.14");
   assert.equal(packageLock.packages[""].version, "0.1.14");
-  assert.equal(manifest.version, "0.1.14");
 });
 
 test("popup version is derived from the manifest instead of hard-coded", () => {

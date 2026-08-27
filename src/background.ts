@@ -294,7 +294,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                       isAd: isAdFromAI || heuristics.isAd,
                       confidence: Math.max(aiConfidence, heuristics.confidence),
                       method: selectedModel === "mobilenet"
-                        ? "MobileNetV4 Image Classification + Heuristics"
+                        ? "Fast Local Classifier + Heuristics"
                         : "CLIP Zero-Shot AI + Heuristics",
                       reasons: [
                         `AI Classification: "${topResult.label}" (${aiConfidence}%)`,
@@ -544,8 +544,8 @@ chrome.webNavigation.onCompleted.addListener((details) => {
       const modelSettings = await chrome.storage.sync.get("visionModel");
       const selectedModel = modelSettings.visionModel || "mobilenet";
 
-      // Whole-page zero-shot classification is a CLIP-only feature. MobileNet
-      // remains image-only and uses URL/domain heuristics for page categories.
+      // Whole-page zero-shot classification is a CLIP-only feature. The fast
+      // local classifier remains image-only and uses URL/domain heuristics for page categories.
       if (selectedModel !== "clip") {
         const category = isStreamingKeywordSite(url) ? "Movie Streaming" : "General Site";
         tabCategories.set(tabId, { category, confidence: 0 });

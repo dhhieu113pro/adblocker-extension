@@ -31,15 +31,21 @@ test("Chrome Store manifest makes broad browsing access optional", () => {
   );
 });
 
-test("Chrome Store build packages stable runtime scripts", () => {
+test("Chrome Store build packages stable runtime scripts and internal offscreen AI", () => {
   const packageJson = readJson("package.json");
+  const packageLock = readJson("package-lock.json");
   const copyScript = readText("scripts/copy-wasm.js");
 
-  assert.equal(packageJson.version, "0.1.14");
+  assert.match(packageJson.scripts["build:offscreen"] || "", /parcel build src\/offscreen\.html/);
   assert.match(packageJson.scripts["build:runtime"] || "", /parcel build src\/content\.js src\/inject\.ts/);
+  assert.match(packageJson.scripts.build, /npm run build:offscreen/);
   assert.match(packageJson.scripts.build, /npm run build:runtime/);
+  assert.match(copyScript, /offscreen\.html/);
   assert.match(copyScript, /runtime\/content\.js|runtime["'],\s*["']content\.js/);
   assert.match(copyScript, /runtime\/inject\.js|runtime["'],\s*["']inject\.js/);
+  assert.equal(packageJson.version, "0.1.14");
+  assert.equal(packageLock.version, "0.1.14");
+  assert.equal(packageLock.packages?.[""]?.version, "0.1.14");
 });
 
 test("offscreen inference resolves ONNX runtime WASM from the extension package", () => {

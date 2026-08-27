@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AI Vision Ad Blocker",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "description": "Smart AI-Powered Visual & Heuristic Ad Blocker using CLIP Open-Vocabulary Zero-Shot Vision & Heuristic Rules Engine",
   "permissions": [
     "scripting",
@@ -12,7 +12,11 @@
     "declarativeNetRequest"
   ],
   "host_permissions": [
-    "<all_urls>"
+    "https://raw.githubusercontent.com/*"
+  ],
+  "optional_host_permissions": [
+    "http://*/*",
+    "https://*/*"
   ],
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';"
@@ -21,29 +25,6 @@
     "service_worker": "background.ts",
     "type": "module"
   },
-  "content_scripts": [
-    {
-      "matches": [
-        "<all_urls>"
-      ],
-      "js": [
-        "inject.ts"
-      ],
-      "run_at": "document_start",
-      "world": "MAIN",
-      "all_frames": true
-    },
-    {
-      "matches": [
-        "<all_urls>"
-      ],
-      "js": [
-        "content.js"
-      ],
-      "run_at": "document_idle",
-      "all_frames": true
-    }
-  ],
   "action": {
     "default_popup": "popup.html",
     "default_icon": {
@@ -58,15 +39,5 @@
     "32": "icon-32.png",
     "64": "icon-64.png",
     "128": "icon-128.png"
-  },
-  "web_accessible_resources": [
-    {
-      "resources": [
-        "offscreen.html"
-      ],
-      "matches": [
-        "<all_urls>"
-      ]
-    }
-  ]
+  }
 }

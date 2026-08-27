@@ -41,6 +41,12 @@ test('MAIN-world popup and click interception combines global and per-site state
   assert.match(inject, /chrome\.storage\.sync\.get\(\["autoHideAds", "disabledSites"\]\)/);
   assert.match(inject, /isAutomaticProtectionEnabled\(settings, window\.location\.href\)/);
   assert.match(inject, /changes\.autoHideAds \|\| changes\.disabledSites/);
+
+  const redirectPolicy = section(inject, '  const shouldBlockRedirect', '  // Hook window.open');
+  assert.match(redirectPolicy, /if \(!fullProtectionEnabled \|\| !siteBlockingEnabled\) return false;/);
+
+  const clickHandler = section(inject, '  window.addEventListener("click"', '  }, true);');
+  assert.match(clickHandler, /if \(!fullProtectionEnabled \|\| !siteBlockingEnabled\) return;/);
 });
 
 test('per-site bypass also stops iframe scanning in the content layer', () => {

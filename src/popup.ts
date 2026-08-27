@@ -17,8 +17,11 @@ document.addEventListener("DOMContentLoaded", () => {
   const emptyHistoryState = document.getElementById("empty-history-state") as HTMLElement;
   const historySummary = document.getElementById("history-summary") as HTMLElement;
   const clearHistoryBtn = document.getElementById("clear-history-btn") as HTMLButtonElement;
+  const versionLabel = document.getElementById("version-label") as HTMLElement;
   const tabButtons = Array.from(document.querySelectorAll<HTMLButtonElement>("[role='tab']"));
   const tabPanels = Array.from(document.querySelectorAll<HTMLElement>("[role='tabpanel']"));
+
+  versionLabel.textContent = `v${chrome.runtime.getManifest().version}`;
 
   function activateTab(tabId: string, focus = false) {
     const activeButtonId = `tab-${tabId}`;

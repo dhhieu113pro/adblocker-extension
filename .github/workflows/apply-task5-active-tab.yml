@@ -1,0 +1,31 @@
+name: Apply Task 5 active-tab test fix
+
+on:
+  push:
+    branches:
+      - feat/optional-site-access
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/optional-site-access
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply active-tab lifecycle patch
+        run: node scripts/task5-active-tab-patch.mjs
+      - name: Commit lifecycle test fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tests/e2e/extension.spec.mjs
+          git diff --cached --quiet && exit 0
+          git commit -m "test: assert full mode on an active HTTP tab"
+          git push origin HEAD:feat/optional-site-access

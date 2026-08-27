@@ -3,6 +3,9 @@ import { pipeline, env } from "@xenova/transformers";
 // Configure transformers.js environment for extension offscreen context
 env.allowLocalModels = false;
 env.allowRemoteModels = true;
+// Chrome Web Store MV3 requires executable WASM to be packaged with the extension.
+// Keep remote model weights enabled, but resolve ONNX Runtime binaries locally.
+env.backends.onnx.wasm.wasmPaths = chrome.runtime.getURL("wasm/");
 
 let clipClassifier: any = null;
 let isClassifierLoading = false;

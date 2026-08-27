@@ -1,4 +1,5 @@
 import { isAdUrl, isExternalAdUrl, isStreamingKeywordSite, isLocalDevelopmentUrl, AD_DOMAINS, loadRemoteAdRules } from "./shared";
+import { FULL_SITE_ORIGINS, syncFullProtectionRegistration } from "./site-access";
 
 const tabBlockedCounts = new Map<number, number>();
 const tabCategories = new Map<number, { category: string, confidence: number }>();
@@ -154,13 +155,54 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   lastCommittedUrls.delete(tabId);
 });
 
-chrome.runtime.onInstalled.addListener(() => {
-  console.log("AI Vision Ad Blocker extension installed");
+async function syncAnalyzeContextMenu(enabled: boolean) {
+  await chrome.contextMenus.removeAll();
+  if (!enabled) return;
   chrome.contextMenus.create({
     id: "analyze-image-ad",
     title: "✨ Analyze with AI & Detect Ad",
     contexts: ["image"],
   });
+}
+
+async function syncSiteAccessState() {
+  const enabled = await syncFullProtectionRegistration();
+  await chrome.storage.local.set({ fullSiteAccessEnabled: enabled });
+  await syncAnalyzeContextMenu(enabled);
+  return enabled;
+}
+
+async function broadcastFullProtectionState(enabled: boolean) {
+  const type = enabled ? "fullProtectionEnabled" : "fullProtectionDisabled";
+  const tabs = await chrome.tabs.query({});
+  await Promise.all(tabs.map(async (tab) => {
+    if (!tab.id) return;
+    try {
+      await chrome.tabs.sendMessage(tab.id, { type });
+    } catch {
+      // Tabs without the packaged content script are expected in baseline mode.
+    }
+  }));
+}
+
+syncSiteAccessState()
+  .then((enabled) => enabled ? undefined : broadcastFullProtectionState(false))
+  .catch((error) => console.warn("[AdBlocker] Site access startup sync failed:", error));
+
+chrome.runtime.onInstalled.addListener(() => {
+  console.log("AI Vision Ad Blocker extension installed");
+  syncSiteAccessState().catch((error) => console.warn("[AdBlocker] Site access install sync failed:", error));
+});
+
+chrome.permissions.onAdded.addListener(async (permissions) => {
+  if (!permissions.origins?.some((origin) => FULL_SITE_ORIGINS.includes(origin))) return;
+  await syncSiteAccessState();
+});
+
+chrome.permissions.onRemoved.addListener(async (permissions) => {
+  if (!permissions.origins?.some((origin) => FULL_SITE_ORIGINS.includes(origin))) return;
+  const enabled = await syncSiteAccessState();
+  if (!enabled) await broadcastFullProtectionState(false);
 });
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
@@ -173,6 +215,40 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === "activateFullProtectionOnTab") {
+    (async () => {
+      const enabled = await syncSiteAccessState();
+      if (!enabled || !message.tabId) {
+        sendResponse({ success: false, enabled });
+        return;
+      }
+
+      const tab = await chrome.tabs.get(message.tabId);
+      if (!/^https?:/i.test(tab.url || "")) {
+        sendResponse({ success: false, enabled, unsupported: true });
+        return;
+      }
+
+      await chrome.scripting.executeScript({
+        target: { tabId: message.tabId, allFrames: true },
+        files: ["runtime/inject.js"],
+        world: "MAIN",
+      });
+      await chrome.scripting.executeScript({
+        target: { tabId: message.tabId, allFrames: true },
+        files: ["runtime/content.js"],
+        world: "ISOLATED",
+      });
+      try {
+        await chrome.tabs.sendMessage(message.tabId, { type: "fullProtectionEnabled" });
+      } catch {
+        // The just-injected content script may still be finishing initialization.
+      }
+      sendResponse({ success: true, enabled: true });
+    })().catch((error) => sendResponse({ success: false, error: String(error) }));
+    return true;
+  }
+
   if (message.type === "getTabCategory") {
     const data = tabCategories.get(message.tabId) || { category: "General Site", confidence: 0 };
     sendResponse(data);

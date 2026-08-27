@@ -12,21 +12,27 @@ if (fs.existsSync(manifestPath)) {
   console.log("✓ dist/manifest.json cleaned");
 }
 
-// 2. Copy offscreen HTML
-if (fs.existsSync(distDir)) {
-  const htmlFiles = fs.readdirSync(distDir).filter(f => f.endsWith(".html") && !f.startsWith("popup"));
+// 2. Validate the explicitly packaged offscreen AI document.
+const offscreenPath = path.join(distDir, "offscreen.html");
+if (!fs.existsSync(offscreenPath)) {
+  throw new Error(`Missing packaged offscreen document: ${offscreenPath}`);
+}
+console.log("✓ offscreen.html packaged");
 
-  if (htmlFiles.length > 0) {
-    const sorted = htmlFiles
-      .map(f => ({ name: f, mtime: fs.statSync(path.join(distDir, f)).mtimeMs }))
-      .sort((a, b) => b.mtime - a.mtime);
-    const offscreenHashed = sorted[0].name;
-    fs.copyFileSync(path.join(distDir, offscreenHashed), path.join(distDir, "offscreen.html"));
-    console.log(`✓ offscreen.html copied from ${offscreenHashed}`);
+// 3. Validate stable page-protection runtime scripts used by dynamic registration.
+const runtimeFiles = [
+  path.join(distDir, "runtime", "content.js"),
+  path.join(distDir, "runtime", "inject.js"),
+];
+
+for (const file of runtimeFiles) {
+  if (!fs.existsSync(file)) {
+    throw new Error(`Missing packaged runtime script: ${file}`);
   }
 }
+console.log("✓ runtime/content.js and runtime/inject.js packaged");
 
-// 3. Package ONNX Runtime WASM inside the extension.
+// 4. Package ONNX Runtime WASM inside the extension.
 // Transformers.js defaults these binaries to a CDN. Chrome Web Store MV3
 // requires executable WASM to ship in the extension package instead.
 const wasmFiles = [

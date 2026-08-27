@@ -15,16 +15,59 @@ function readJson(relativePath) {
   return JSON.parse(readText(relativePath));
 }
 
-test("Chrome Store manifest keeps only required broad-access permissions", () => {
+test("Chrome Store manifest makes broad browsing access optional", () => {
   const manifest = readJson("src/manifest.json");
 
   assert.equal(manifest.permissions.includes("activeTab"), false);
   assert.equal(manifest.permissions.includes("tabs"), false);
-  assert.deepEqual(manifest.host_permissions, ["<all_urls>"]);
+  assert.deepEqual(manifest.host_permissions, ["https://raw.githubusercontent.com/*"]);
+  assert.deepEqual(manifest.optional_host_permissions, ["http://*/*", "https://*/*"]);
+  assert.equal("content_scripts" in manifest, false);
+  assert.equal("web_accessible_resources" in manifest, false);
+  assert.equal(manifest.version, "0.1.14");
   assert.equal(
     manifest.content_security_policy?.extension_pages,
     "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';"
   );
+});
+
+test("Chrome Store build packages stable runtime scripts and internal offscreen AI", () => {
+  const packageJson = readJson("package.json");
+  const packageLock = readJson("package-lock.json");
+  const copyScript = readText("scripts/copy-wasm.js");
+
+  assert.match(packageJson.scripts["build:offscreen"] || "", /parcel build src\/offscreen\.html/);
+  assert.match(packageJson.scripts["build:runtime"] || "", /parcel build src\/content\.js src\/inject\.ts/);
+  assert.match(packageJson.scripts.build, /npm run build:offscreen/);
+  assert.match(packageJson.scripts.build, /npm run build:runtime/);
+  assert.match(copyScript, /offscreen\.html/);
+  assert.match(copyScript, /runtime\/content\.js|runtime["'],\s*["']content\.js/);
+  assert.match(copyScript, /runtime\/inject\.js|runtime["'],\s*["']inject\.js/);
+  assert.equal(packageJson.version, "0.1.14");
+  assert.equal(packageLock.version, "0.1.14");
+  assert.equal(packageLock.packages?.[""]?.version, "0.1.14");
+});
+
+test("background synchronizes optional access and runtime scripts are injection-safe", () => {
+  const background = readText("src/background.ts");
+  const content = readText("src/content.js");
+  const inject = readText("src/inject.ts");
+
+  assert.match(background, /syncFullProtectionRegistration/);
+  assert.match(background, /chrome\.permissions\.onAdded/);
+  assert.match(background, /chrome\.permissions\.onRemoved/);
+  assert.match(background, /chrome\.scripting\.executeScript/);
+  assert.match(background, /runtime\/inject\.js/);
+  assert.match(background, /runtime\/content\.js/);
+  assert.match(background, /activateFullProtectionOnTab/);
+  assert.match(background, /fullProtectionDisabled/);
+  assert.match(content, /__aiVisionAdBlockerContentInitialized/);
+  assert.match(content, /fullProtectionDisabled/);
+  assert.match(
+    content,
+    /scanClickjackingOverlays\(\)\s*\{\s*if \(!this\.autoHideAds \|\| this\.siteDisabled\) return;/,
+  );
+  assert.match(inject, /__aiVisionAdBlockerMainInitialized/);
 });
 
 test("offscreen inference resolves ONNX runtime WASM from the extension package", () => {

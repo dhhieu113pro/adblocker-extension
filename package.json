@@ -4,7 +4,9 @@
   "description": "AI-Powered Visual & Heuristic Ad Blocker Chromium Extension using CLIP Zero-Shot Classification & Offscreen WASM",
   "scripts": {
     "dev": "parcel watch src/manifest.json --config @parcel/config-webextension --no-source-maps",
-    "build": "parcel build src/manifest.json --config @parcel/config-webextension --no-source-maps && npm run copy-wasm",
+    "build": "parcel build src/manifest.json --config @parcel/config-webextension --no-source-maps && npm run build:offscreen && npm run build:runtime && npm run copy-wasm",
+    "build:offscreen": "parcel build src/offscreen.html --dist-dir dist --no-source-maps --no-content-hash",
+    "build:runtime": "parcel build src/content.js src/inject.ts --dist-dir dist/runtime --no-source-maps --no-content-hash",
     "copy-wasm": "node scripts/copy-wasm.js",
     "test": "node --test tests/*.test.mjs",
     "test:coverage": "node --test --experimental-test-coverage --test-coverage-include=src/image-ad-policy.mjs --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 tests/*.test.mjs",

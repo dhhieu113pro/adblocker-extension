@@ -85,12 +85,70 @@ async function openPopup() {
   return popup;
 }
 
+const FULL_SITE_ORIGINS = ['http://*/*', 'https://*/*'];
+const FULL_PROTECTION_SCRIPT_IDS = ['ai-vision-content', 'ai-vision-main'];
+
+async function openExtensionsManager() {
+  const manager = await context.newPage();
+  await manager.goto(`chrome://extensions/?id=${extensionId}`);
+  await manager.waitForFunction(() => Boolean(chrome.developerPrivate?.addHostPermission));
+  return manager;
+}
+
+async function primeFullSiteAccessForHeadlessTest() {
+  const manager = await openExtensionsManager();
+  try {
+    await manager.evaluate(async ({ id, origins }) => {
+      for (const origin of origins) {
+        await chrome.developerPrivate.addHostPermission(id, origin);
+      }
+    }, { id: extensionId, origins: FULL_SITE_ORIGINS });
+  } finally {
+    await manager.close();
+  }
+}
+
+async function grantFullSiteAccess(popup) {
+  // Chromium's own optional-permission tests pre-seed runtime grants to bypass
+  // the native confirmation UI. The real extension CTA still performs
+  // chrome.permissions.request() under a user gesture and completes the grant.
+  await primeFullSiteAccessForHeadlessTest();
+  await popup.getByRole('button', { name: 'Enable full protection' }).click();
+
+  await expect.poll(async () => popup.evaluate(async (origins) => chrome.permissions.contains({ origins }), FULL_SITE_ORIGINS)).toBe(true);
+  await expect.poll(async () => popup.evaluate(async (ids) => {
+    const registrations = await chrome.scripting.getRegisteredContentScripts({ ids });
+    return registrations.map((item) => item.id).sort();
+  }, FULL_PROTECTION_SCRIPT_IDS)).toEqual([...FULL_PROTECTION_SCRIPT_IDS].sort());
+}
+
+async function revokeFullSiteAccess(popup) {
+  const removed = await popup.evaluate(async (origins) => chrome.permissions.remove({ origins }), FULL_SITE_ORIGINS);
+  expect(removed).toBe(true);
+
+  await expect.poll(async () => popup.evaluate(async (origins) => chrome.permissions.contains({ origins }), FULL_SITE_ORIGINS)).toBe(false);
+  await expect.poll(async () => popup.evaluate(async (ids) => {
+    const registrations = await chrome.scripting.getRegisteredContentScripts({ ids });
+    return registrations.map((item) => item.id).sort();
+  }, FULL_PROTECTION_SCRIPT_IDS)).toEqual([]);
+}
+
 test('keeps browser action width fixed when the initial viewport is narrow', async () => {
   const popup = await context.newPage();
   await popup.setViewportSize({ width: 80, height: 650 });
   await popup.goto(popupUrl());
 
   await expect.poll(async () => popup.evaluate(() => Math.round(document.body.getBoundingClientRect().width))).toBe(390);
+});
+
+test('fresh install starts in Basic protection until full site access is granted', async () => {
+  const popup = await openPopup();
+
+  await expect(popup.locator('#status-label')).toHaveText('Basic protection is on');
+  await expect(popup.locator('#status-detail')).toContainText('Known ad networks are blocked');
+  await expect(popup.getByRole('button', { name: 'Enable full protection' })).toBeVisible();
+  await expect(popup.locator('#site-block-toggle')).toBeDisabled();
+  await expect(popup.locator('#ad-list')).toContainText('Enable full protection');
 });
 
 test('opens Overview by default and captures every popup tab', async () => {
@@ -216,7 +274,7 @@ test('renders and clears blocked history from the History tab', async () => {
   })).toEqual([]);
 });
 
-test('content script hides a known ad container on a real HTTP page', async () => {
+test('baseline mode leaves page DOM untouched before full site access is granted', async () => {
   const page = await context.newPage();
   await page.goto(baseUrl);
 
@@ -224,7 +282,41 @@ test('content script hides a known ad container on a real HTTP page', async () =
   await expect.poll(async () => page.locator('#adbro').evaluate((el) => ({
     hidden: el.dataset.webllmAdHidden,
     display: getComputedStyle(el).display,
+  }))).toEqual({ hidden: undefined, display: 'block' });
+});
+
+test('granting full site access enables DOM protection and revocation returns to baseline', async () => {
+  const popup = await openPopup();
+  await grantFullSiteAccess(popup);
+
+  const protectedPage = await context.newPage();
+  await protectedPage.goto(baseUrl);
+  await expect(protectedPage.locator('#normal-content')).toBeVisible();
+  await expect.poll(async () => protectedPage.locator('#adbro').evaluate((el) => ({
+    hidden: el.dataset.webllmAdHidden,
+    display: getComputedStyle(el).display,
   }))).toEqual({ hidden: 'true', display: 'none' });
+
+  await protectedPage.bringToFront();
+  await popup.reload();
+  await expect(popup.getByRole('button', { name: 'Enable full protection' })).toBeHidden();
+  await expect(popup.locator('#status-label')).toHaveText('Protection is on');
+
+  await revokeFullSiteAccess(popup);
+  await expect(popup.locator('#status-label')).toHaveText('Basic protection is on');
+  await expect(popup.getByRole('button', { name: 'Enable full protection' })).toBeVisible();
+
+  const baselinePage = await context.newPage();
+  await baselinePage.goto(`${baseUrl}/after-revoke`);
+  await expect(baselinePage.locator('#normal-content')).toBeVisible();
+  await expect.poll(async () => baselinePage.locator('#adbro').evaluate((el) => ({
+    hidden: el.dataset.webllmAdHidden,
+    display: getComputedStyle(el).display,
+  }))).toEqual({ hidden: undefined, display: 'block' });
+
+  await protectedPage.close();
+  await baselinePage.close();
+  await popup.close();
 });
 
 test('whole-page CLIP classification is gated behind explicit CLIP selection', async () => {

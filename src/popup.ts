@@ -1,9 +1,11 @@
 import { STREAMING_KEYWORDS, COMIC_KEYWORDS } from "./shared";
+import { hasFullSiteAccess, requestFullSiteAccess } from "./site-access";
 
 document.addEventListener("DOMContentLoaded", () => {
   const autoHideToggle = document.getElementById("auto-hide-toggle") as HTMLInputElement;
   const visionModelSelect = document.getElementById("vision-model-select") as HTMLSelectElement;
   const siteBlockToggle = document.getElementById("site-block-toggle") as HTMLInputElement;
+  const enableFullProtectionBtn = document.getElementById("enable-full-protection-btn") as HTMLButtonElement;
   const protectionCard = document.getElementById("protection-card") as HTMLElement;
   const statusLabel = document.getElementById("status-label") as HTMLElement;
   const statusDetail = document.getElementById("status-detail") as HTMLElement;
@@ -20,6 +22,10 @@ document.addEventListener("DOMContentLoaded", () => {
   const versionLabel = document.getElementById("version-label") as HTMLElement;
   const tabButtons = Array.from(document.querySelectorAll<HTMLButtonElement>("[role='tab']"));
   const tabPanels = Array.from(document.querySelectorAll<HTMLElement>("[role='tabpanel']"));
+
+  let fullSiteAccess = false;
+  let currentSiteKey = "";
+  let currentSiteSupported = false;
 
   versionLabel.textContent = `v${chrome.runtime.getManifest().version}`;
 
@@ -65,7 +71,11 @@ document.addEventListener("DOMContentLoaded", () => {
   chrome.storage.sync.get(["autoHideAds", "visionModel"], (res) => {
     if (res.autoHideAds !== undefined) autoHideToggle.checked = res.autoHideAds;
     visionModelSelect.value = res.visionModel || "mobilenet";
-    updateProtectionState();
+    refreshSiteAccessState().catch(() => {
+      fullSiteAccess = false;
+      updateProtectionState();
+      renderAccessRequiredState();
+    });
   });
 
   autoHideToggle.addEventListener("change", () => {
@@ -76,37 +86,52 @@ document.addEventListener("DOMContentLoaded", () => {
     chrome.storage.sync.set({ visionModel: visionModelSelect.value });
   });
 
-  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    const activeTab = tabs[0];
-    const site = getSiteKey(activeTab?.url);
+  siteBlockToggle.addEventListener("change", () => {
+    if (!fullSiteAccess || !currentSiteKey) return;
 
-    if (!site) {
-      siteBlockToggle.checked = false;
-      siteBlockToggle.disabled = true;
-      currentSite.textContent = "This browser page";
-      updateProtectionState();
-      return;
-    }
-
-    siteBlockToggle.disabled = false;
-    currentSite.textContent = site;
-    chrome.storage.sync.get(["disabledSites"], (res) => {
-      siteBlockToggle.checked = !(res.disabledSites || []).includes(site);
-      updateProtectionState();
-    });
-
-    siteBlockToggle.addEventListener("change", () => {
-      chrome.storage.sync.get(["disabledSites"], (current) => {
-        const sites = new Set<string>(current.disabledSites || []);
-        if (siteBlockToggle.checked) sites.delete(site);
-        else sites.add(site);
-        chrome.storage.sync.set({ disabledSites: Array.from(sites) }, updateProtectionState);
-      });
+    chrome.storage.sync.get(["disabledSites"], (current) => {
+      const sites = new Set<string>(current.disabledSites || []);
+      if (siteBlockToggle.checked) sites.delete(currentSiteKey);
+      else sites.add(currentSiteKey);
+      chrome.storage.sync.set({ disabledSites: Array.from(sites) }, updateProtectionState);
     });
   });
 
+  enableFullProtectionBtn.addEventListener("click", async () => {
+    enableFullProtectionBtn.disabled = true;
+    try {
+      const granted = await requestFullSiteAccess();
+      if (granted) {
+        const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (activeTab?.id) {
+          await chrome.runtime.sendMessage({
+            type: "activateFullProtectionOnTab",
+            tabId: activeTab.id,
+          });
+        }
+      }
+      await refreshSiteAccessState();
+    } finally {
+      enableFullProtectionBtn.disabled = false;
+    }
+  });
+
+  chrome.permissions.onRemoved.addListener(() => {
+    refreshSiteAccessState().catch(() => undefined);
+  });
+
   function updateProtectionState() {
-    const unavailable = siteBlockToggle.disabled;
+    if (!fullSiteAccess) {
+      protectionCard.classList.remove("off", "unavailable");
+      statusLabel.textContent = "Basic protection is on";
+      statusDetail.textContent = "Known ad networks are blocked. Enable full protection for AI and page-level detection.";
+      enableFullProtectionBtn.hidden = false;
+      siteBlockToggle.disabled = true;
+      return;
+    }
+
+    enableFullProtectionBtn.hidden = true;
+    const unavailable = !currentSiteSupported || siteBlockToggle.disabled;
     const globalEnabled = autoHideToggle.checked;
     const siteEnabled = !unavailable && siteBlockToggle.checked;
     const enabled = globalEnabled && siteEnabled;
@@ -139,11 +164,47 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  loadTabAds();
+  async function refreshSiteAccessState() {
+    fullSiteAccess = await hasFullSiteAccess();
+    const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    currentSiteKey = getSiteKey(activeTab?.url);
+    currentSiteSupported = Boolean(currentSiteKey);
+
+    if (!fullSiteAccess) {
+      currentSite.textContent = currentSiteKey || "Website access not granted";
+      siteBlockToggle.checked = false;
+      siteBlockToggle.disabled = true;
+      aiCategoryText.textContent = "Basic";
+      aiCategoryText.title = "Network-level protection";
+      updateProtectionState();
+      renderAccessRequiredState();
+      return;
+    }
+
+    currentSite.textContent = currentSiteKey || "This browser page";
+    if (!currentSiteSupported) {
+      siteBlockToggle.checked = false;
+      siteBlockToggle.disabled = true;
+      aiCategoryText.textContent = "General";
+      aiCategoryText.title = "";
+      updateProtectionState();
+      renderAds([]);
+      return;
+    }
+
+    const settings = await chrome.storage.sync.get(["disabledSites"]);
+    siteBlockToggle.checked = !(settings.disabledSites || []).includes(currentSiteKey);
+    siteBlockToggle.disabled = false;
+    updateProtectionState();
+    loadTabAds();
+    queryTabCategory();
+  }
+
   loadAdHistory();
-  queryTabCategory();
 
   function queryTabCategory() {
+    if (!fullSiteAccess) return;
+
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       const activeTab = tabs[0];
       if (!activeTab?.id) return;
@@ -241,6 +302,11 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function loadTabAds() {
+    if (!fullSiteAccess) {
+      renderAccessRequiredState();
+      return;
+    }
+
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       const activeTab = tabs[0];
       if (!activeTab?.id) return;
@@ -255,14 +321,33 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  function setEmptyAdsState(title: string, detail: string) {
+    emptyState.style.display = "flex";
+    emptyState.innerHTML = "";
+    const heading = document.createElement("strong");
+    heading.textContent = title;
+    const copy = document.createElement("span");
+    copy.textContent = detail;
+    emptyState.append(heading, copy);
+    adListContainer.innerHTML = "";
+    adListContainer.appendChild(emptyState);
+  }
+
+  function renderAccessRequiredState() {
+    adCountBadge.textContent = "0";
+    adCountSummary.textContent = "0";
+    setEmptyAdsState(
+      "Full protection is optional",
+      "Enable full protection to detect and hide page-level ads.",
+    );
+  }
+
   function renderAds(ads: any[]) {
     adCountBadge.textContent = String(ads.length);
     adCountSummary.textContent = String(ads.length);
 
     if (ads.length === 0) {
-      emptyState.style.display = "flex";
-      adListContainer.innerHTML = "";
-      adListContainer.appendChild(emptyState);
+      setEmptyAdsState("Nothing suspicious found", "This page looks clean so far.");
       return;
     }
 

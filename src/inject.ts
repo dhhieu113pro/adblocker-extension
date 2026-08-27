@@ -1,6 +1,10 @@
 import { isAdUrl as sharedIsAdUrl, isStreamingKeywordSite, isLocalDevelopmentUrl } from "./shared";
 
 (function() {
+  if ((window as any).__aiVisionAdBlockerMainInitialized) return;
+  (window as any).__aiVisionAdBlockerMainInitialized = true;
+  let fullProtectionEnabled = true;
+
   // Wrappers bind page context (relative URL resolution / current page host)
     const isAdUrl = (rawUrl: any, aggressive = false): boolean =>
       sharedIsAdUrl(rawUrl, window.location.href, aggressive);
@@ -36,6 +40,7 @@ import { isAdUrl as sharedIsAdUrl, isStreamingKeywordSite, isLocalDevelopmentUrl
 
   // Helper to determine if we should block the target popup URL based on context
   const shouldBlockRedirect = (targetUrl: string): boolean => {
+    if (!fullProtectionEnabled) return false;
     const isStreaming = isStreamingOrAdProneSite(window.location.href);
     // If it's a streaming site, strictly block any external URL (except whitelist/same-brand)
     // If it's a normal site, only block if the target URL explicitly matches known ad domains
@@ -44,6 +49,22 @@ import { isAdUrl as sharedIsAdUrl, isStreamingKeywordSite, isLocalDevelopmentUrl
 
   // Hook window.open and return Proxy to catch blank window locations
   const originalOpen = window.open;
+  const handleFullProtectionState = (event: any) => {
+    fullProtectionEnabled = event.detail !== false;
+    if (fullProtectionEnabled) return;
+
+    try {
+      Object.defineProperty(window, "open", {
+        value: originalOpen,
+        writable: true,
+        configurable: true,
+      });
+    } catch {}
+    (window as any).__aiVisionAdBlockerMainInitialized = false;
+    window.removeEventListener("aiVisionFullProtectionState", handleFullProtectionState);
+  };
+  window.addEventListener("aiVisionFullProtectionState", handleFullProtectionState);
+
   const myOpen = function(url?: string | URL, target?: string, features?: string) {
     const urlStr = url ? url.toString() : "";
     if (urlStr && shouldBlockRedirect(urlStr)) {
@@ -108,6 +129,7 @@ import { isAdUrl as sharedIsAdUrl, isStreamingKeywordSite, isLocalDevelopmentUrl
 
   // Intercept click hijacking via dynamic link clicks (capturing phase)
   window.addEventListener("click", (e: MouseEvent) => {
+    if (!fullProtectionEnabled) return;
     if (isLocalDevelopmentUrl(window.location.href)) return;
     const target = e.target as HTMLElement;
     if (!target) return;

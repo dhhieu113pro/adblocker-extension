@@ -51,6 +51,16 @@ async function isProtectionEnabledForUrl(url: string) {
   return isAutomaticProtectionEnabled(settings, url);
 }
 
+async function isTabStillProtected(tabId: number, expectedUrl: string) {
+  try {
+    const currentTab = await chrome.tabs.get(tabId);
+    if (!currentTab?.url || currentTab.url !== expectedUrl) return false;
+    return isProtectionEnabledForUrl(currentTab.url);
+  } catch {
+    return false;
+  }
+}
+
 // --- Per-image CLIP result cache (#3) ---
 const CLIP_CACHE_KEY = "webllmClipCache";
 const CLIP_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
@@ -696,6 +706,7 @@ chrome.webNavigation.onCompleted.addListener((details) => {
                                topMatch.label.includes("promotional");
 
               if (isAdPage && topMatch.score >= 0.50) {
+                if (!(await isTabStillProtected(tabId, url))) return;
                 console.warn(`[AdBlocker] AI visually identified popup tab ${tabId} as an AD LANDER: "${topMatch.label}" (${confidence}% confidence). Closing tab.`);
                 
                 // Close the popup tab
@@ -741,6 +752,10 @@ chrome.webNavigation.onCompleted.addListener((details) => {
               categoryCache.set(url, { category, confidence });
             }
 
+            if (!(await isTabStillProtected(tabId, url))) {
+              tabCategories.delete(tabId);
+              return;
+            }
             console.log(`[AdBlocker] AI Classified tab ${tabId} (${url}) as: ${category} (${finalConfidence}% confidence)`);
             tabCategories.set(tabId, { category, confidence: finalConfidence });
 

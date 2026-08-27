@@ -537,6 +537,7 @@ class AdBlockerOverlay {
   }
 
   scanClickjackingOverlays() {
+    if (!this.autoHideAds || this.siteDisabled) return;
     const divs = Array.from(document.querySelectorAll("div, a, iframe, ins"));
     const viewWidth = window.innerWidth;
     const viewHeight = window.innerHeight;

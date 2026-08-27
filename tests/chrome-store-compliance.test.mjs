@@ -46,7 +46,7 @@ test("post-build step packages every ONNX Runtime 1.14 WASM fallback", () => {
   ];
 
   assert.match(source, /node_modules["'],\s*["']onnxruntime-web["'],\s*["']dist/);
-  assert.match(source, /dist["'],\s*["']wasm/);
+  assert.match(source, /path\.join\(distDir,\s*["']wasm["']\)/);
 
   for (const file of requiredFiles) {
     assert.equal(source.includes(file), true, `copy-wasm.js must package ${file}`);

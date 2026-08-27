@@ -11,7 +11,7 @@ import { isAutomaticProtectionEnabled } from "./protection-state.mjs";
       sharedIsAdUrl(rawUrl, window.location.href, aggressive);
 
   let tabCategory = "General Site";
-  let siteBlockingEnabled = true;
+  let siteBlockingEnabled = false;
   let currentProtectionSettings: { autoHideAds?: boolean; disabledSites?: string[] } = {};
   const applyProtectionSettings = (settings: typeof currentProtectionSettings) => {
     currentProtectionSettings = settings;

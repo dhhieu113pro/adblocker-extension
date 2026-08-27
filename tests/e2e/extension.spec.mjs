@@ -85,6 +85,18 @@ async function openPopup() {
   return popup;
 }
 
+const FULL_SITE_ORIGINS = ['http://*/*', 'https://*/*'];
+
+async function grantFullSiteAccess(popup) {
+  const granted = await popup.evaluate(async (origins) => chrome.permissions.request({ origins }), FULL_SITE_ORIGINS);
+  expect(granted).toBe(true);
+}
+
+async function revokeFullSiteAccess(popup) {
+  const removed = await popup.evaluate(async (origins) => chrome.permissions.remove({ origins }), FULL_SITE_ORIGINS);
+  expect(removed).toBe(true);
+}
+
 test('keeps browser action width fixed when the initial viewport is narrow', async () => {
   const popup = await context.newPage();
   await popup.setViewportSize({ width: 80, height: 650 });
@@ -235,6 +247,39 @@ test('baseline mode leaves page DOM untouched before full site access is granted
     hidden: el.dataset.webllmAdHidden,
     display: getComputedStyle(el).display,
   }))).toEqual({ hidden: undefined, display: 'block' });
+});
+
+test('granting full site access enables DOM protection and revocation returns to baseline', async () => {
+  const popup = await openPopup();
+  await grantFullSiteAccess(popup);
+
+  await popup.reload();
+  await expect(popup.getByRole('button', { name: 'Enable full protection' })).toBeHidden();
+  await expect(popup.locator('#status-label')).toHaveText('Protection is on');
+
+  const protectedPage = await context.newPage();
+  await protectedPage.goto(baseUrl);
+  await expect(protectedPage.locator('#normal-content')).toBeVisible();
+  await expect.poll(async () => protectedPage.locator('#adbro').evaluate((el) => ({
+    hidden: el.dataset.webllmAdHidden,
+    display: getComputedStyle(el).display,
+  }))).toEqual({ hidden: 'true', display: 'none' });
+
+  await revokeFullSiteAccess(popup);
+  await expect(popup.locator('#status-label')).toHaveText('Basic protection is on');
+  await expect(popup.getByRole('button', { name: 'Enable full protection' })).toBeVisible();
+
+  const baselinePage = await context.newPage();
+  await baselinePage.goto(`${baseUrl}/after-revoke`);
+  await expect(baselinePage.locator('#normal-content')).toBeVisible();
+  await expect.poll(async () => baselinePage.locator('#adbro').evaluate((el) => ({
+    hidden: el.dataset.webllmAdHidden,
+    display: getComputedStyle(el).display,
+  }))).toEqual({ hidden: undefined, display: 'block' });
+
+  await protectedPage.close();
+  await baselinePage.close();
+  await popup.close();
 });
 
 test('whole-page CLIP classification is gated behind explicit CLIP selection', async () => {

@@ -1,0 +1,29 @@
+name: Apply page classification bypass fix once
+
+on:
+  push:
+    branches:
+      - fix/true-protection-bypass
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/true-protection-bypass
+      - name: Apply page classification bypass fix
+        run: python scripts/apply-page-classification-bypass-fix.py
+      - name: Commit production change
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/background.ts
+          git diff --cached --quiet && { echo "::error::No production change was produced"; exit 1; }
+          git commit -m "fix: revalidate page classification before acting"
+          git push origin HEAD:fix/true-protection-bypass

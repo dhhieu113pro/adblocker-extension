@@ -91,11 +91,11 @@ const FULL_PROTECTION_SCRIPT_IDS = ['ai-vision-content', 'ai-vision-main'];
 async function openExtensionsManager() {
   const manager = await context.newPage();
   await manager.goto(`chrome://extensions/?id=${extensionId}`);
-  await manager.waitForFunction(() => Boolean(chrome.developerPrivate?.addHostPermission && chrome.developerPrivate?.removeHostPermission));
+  await manager.waitForFunction(() => Boolean(chrome.developerPrivate?.addHostPermission));
   return manager;
 }
 
-async function grantFullSiteAccess(popup) {
+async function primeFullSiteAccessForHeadlessTest() {
   const manager = await openExtensionsManager();
   try {
     await manager.evaluate(async ({ id, origins }) => {
@@ -106,6 +106,14 @@ async function grantFullSiteAccess(popup) {
   } finally {
     await manager.close();
   }
+}
+
+async function grantFullSiteAccess(popup) {
+  // Chromium's own optional-permission tests pre-seed runtime grants to bypass
+  // the native confirmation UI. The real extension CTA still performs
+  // chrome.permissions.request() under a user gesture and completes the grant.
+  await primeFullSiteAccessForHeadlessTest();
+  await popup.getByRole('button', { name: 'Enable full protection' }).click();
 
   await expect.poll(async () => popup.evaluate(async (origins) => chrome.permissions.contains({ origins }), FULL_SITE_ORIGINS)).toBe(true);
   await expect.poll(async () => popup.evaluate(async (ids) => {
@@ -115,16 +123,8 @@ async function grantFullSiteAccess(popup) {
 }
 
 async function revokeFullSiteAccess(popup) {
-  const manager = await openExtensionsManager();
-  try {
-    await manager.evaluate(async ({ id, origins }) => {
-      for (const origin of origins) {
-        await chrome.developerPrivate.removeHostPermission(id, origin);
-      }
-    }, { id: extensionId, origins: FULL_SITE_ORIGINS });
-  } finally {
-    await manager.close();
-  }
+  const removed = await popup.evaluate(async (origins) => chrome.permissions.remove({ origins }), FULL_SITE_ORIGINS);
+  expect(removed).toBe(true);
 
   await expect.poll(async () => popup.evaluate(async (origins) => chrome.permissions.contains({ origins }), FULL_SITE_ORIGINS)).toBe(false);
   await expect.poll(async () => popup.evaluate(async (ids) => {

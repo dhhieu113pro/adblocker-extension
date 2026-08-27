@@ -44,3 +44,9 @@ test("fast ad classifier uses a Transformers.js v2-compatible advertisement mode
   assert.match(source, /Xenova\/dit-base-finetuned-rvlcdip/);
   assert.doesNotMatch(source, /mobilenetv4_conv_small|mobilenet_v4/);
 });
+
+test("content script delegates transparent overlay removal to the explicit ad policy", () => {
+  const source = readFileSync(new URL("../src/content.js", import.meta.url), "utf8");
+  assert.match(source, /shouldRemoveTransparentAdOverlay/);
+  assert.doesNotMatch(source, /console\.warn\("\[AdBlocker\] Detected transparent clickjacking overlay/);
+});

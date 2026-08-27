@@ -20,41 +20,41 @@ jobs:
         shell: python
         run: |
           from pathlib import Path
-          path = Path('src/popup.css')
+          path = Path("src/popup.css")
           css = path.read_text()
-          marker = '.primary-button {'
+          marker = ".primary-button {"
           if marker not in css:
-              css += '''
+              css += """
 
-.primary-button {
-  align-self: flex-start;
-  min-height: 36px;
-  margin-top: var(--space-xs);
-  padding: 0 var(--space-sm);
-  border: 1px solid var(--color-accent);
-  border-radius: var(--radius-sm);
-  background: var(--color-accent);
-  color: var(--color-accent-ink);
-  cursor: pointer;
-  font-size: 11px;
-  font-weight: 700;
-}
+          .primary-button {
+            align-self: flex-start;
+            min-height: 36px;
+            margin-top: var(--space-xs);
+            padding: 0 var(--space-sm);
+            border: 1px solid var(--color-accent);
+            border-radius: var(--radius-sm);
+            background: var(--color-accent);
+            color: var(--color-accent-ink);
+            cursor: pointer;
+            font-size: 11px;
+            font-weight: 700;
+          }
 
-.primary-button:disabled {
-  cursor: wait;
-  opacity: 0.6;
-}
+          .primary-button:disabled {
+            cursor: wait;
+            opacity: 0.6;
+          }
 
-.primary-button:active {
-  transform: translateY(1px);
-}
+          .primary-button:active {
+            transform: translateY(1px);
+          }
 
-@media (hover: hover) {
-  .primary-button:hover:not(:disabled) {
-    filter: brightness(1.08);
-  }
-}
-'''
+          @media (hover: hover) {
+            .primary-button:hover:not(:disabled) {
+              filter: brightness(1.08);
+            }
+          }
+          """
               path.write_text(css)
       - name: Commit style
         run: |

@@ -98,7 +98,7 @@ test('long-running page classification revalidates tab URL and bypass state befo
     'popup protection state must be rechecked before closing the tab',
   );
 
-  const categoryCommit = section(background, 'console.log(`[AdBlocker] AI Classified tab', '// Push category directly to inject.ts MAIN world context');
+  const categoryCommit = section(background, '// B. Classify category for general layout', '// Push category directly to inject.ts MAIN world context');
   assert.match(categoryCommit, /await isTabStillProtected\(tabId, url\)/);
   assert.ok(
     categoryCommit.indexOf('await isTabStillProtected(tabId, url)') < categoryCommit.indexOf('tabCategories.set(tabId'),

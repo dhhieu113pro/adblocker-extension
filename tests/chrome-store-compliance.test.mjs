@@ -63,6 +63,10 @@ test("background synchronizes optional access and runtime scripts are injection-
   assert.match(background, /fullProtectionDisabled/);
   assert.match(content, /__aiVisionAdBlockerContentInitialized/);
   assert.match(content, /fullProtectionDisabled/);
+  assert.match(
+    content,
+    /scanClickjackingOverlays\(\)\s*\{\s*if \(!this\.autoHideAds \|\| this\.siteDisabled\) return;/,
+  );
   assert.match(inject, /__aiVisionAdBlockerMainInitialized/);
 });
 

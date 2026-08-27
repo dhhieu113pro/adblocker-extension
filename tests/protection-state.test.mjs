@@ -34,12 +34,12 @@ test('global protection off bypasses automatic protection for every site', async
   );
 });
 
-test('per-site bypass disables only the matching site', async () => {
+test('per-site bypass applies to the disabled domain and its subdomains', async () => {
   const { isAutomaticProtectionEnabled } = await loadProtectionState();
   const settings = { autoHideAds: true, disabledSites: ['allowed.example'] };
 
   assert.equal(isAutomaticProtectionEnabled(settings, 'https://allowed.example/watch'), false);
-  assert.equal(isAutomaticProtectionEnabled(settings, 'https://cdn.allowed.example/asset'), true);
+  assert.equal(isAutomaticProtectionEnabled(settings, 'https://cdn.allowed.example/asset'), false);
   assert.equal(isAutomaticProtectionEnabled(settings, 'https://protected.example/watch'), true);
 });
 

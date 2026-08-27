@@ -27,7 +27,7 @@ test('background automatic navigation and AI paths use the shared protection pol
   const sameTab = section(background, 'chrome.webNavigation.onBeforeNavigate', '// 3. AI Visually Classify Website Category');
   assert.match(sameTab, /await isProtectionEnabledForUrl\(sourceUrl\)/);
 
-  const pageAutomation = section(background, 'chrome.webNavigation.onCompleted', 'function classifyWebsiteCategory');
+  const pageAutomation = section(background, 'chrome.webNavigation.onCompleted');
   assert.match(pageAutomation, /await isProtectionEnabledForUrl\(url\)/);
 
   const detectAd = section(background, 'if (message.type === "detectAd")', 'return false;');

@@ -62,7 +62,7 @@ test('granting full site access enables DOM protection and revocation returns to
   await expect(popup.getByRole('button', { name: 'Enable full protection' })).toBeVisible();
 
   const baselinePage = await context.newPage();
-  await baselinePage.goto(\`${baseUrl}/after-revoke\`);
+  await baselinePage.goto(\`\${baseUrl}/after-revoke\`);
   await expect(baselinePage.locator('#normal-content')).toBeVisible();
   await expect.poll(async () => baselinePage.locator('#adbro').evaluate((el) => ({
     hidden: el.dataset.webllmAdHidden,

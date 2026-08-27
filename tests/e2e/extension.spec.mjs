@@ -235,12 +235,14 @@ test('whole-page CLIP classification is gated behind explicit CLIP selection', a
   expect(capture).toBeGreaterThan(clipGuard);
 });
 
-test('offscreen uses valid Transformers.js model repositories and MobileNet fallback', async () => {
+test('offscreen uses valid Transformers.js model repositories and a compatible fast classifier', async () => {
   const offscreen = await readFile(path.resolve('src/offscreen.ts'), 'utf8');
 
   expect(offscreen).toContain('"Xenova/clip-vit-base-patch16"');
   expect(offscreen).not.toContain('"Xenova/clip-vit-base-patch16-224"');
-  expect(offscreen).toContain('"onnx-community/mobilenetv4_conv_small.e2400_r224_in1k"');
+  expect(offscreen).toContain('"Xenova/dit-base-finetuned-rvlcdip"');
+  expect(offscreen).not.toContain('mobilenetv4_conv_small');
+  expect(offscreen).not.toContain('mobilenet_v4');
   expect(offscreen).toContain('const selectedModel = message.model === "clip" ? "clip" : "mobilenet";');
 });
 

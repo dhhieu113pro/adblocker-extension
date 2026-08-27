@@ -125,6 +125,26 @@ class AdBlockerOverlay {
 
   initMessageListener() {
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+      if (message.type === "fullProtectionDisabled") {
+        this.siteDisabled = true;
+        this.disableSiteBlocking();
+        window.dispatchEvent(new CustomEvent("aiVisionFullProtectionState", { detail: false }));
+        sendResponse({ success: true });
+        return true;
+      }
+      if (message.type === "fullProtectionEnabled") {
+        chrome.storage.sync.get(["disabledSites"], (res) => {
+          const site = window.location.hostname.toLowerCase();
+          this.siteDisabled = Array.isArray(res.disabledSites) && res.disabledSites.includes(site);
+          window.dispatchEvent(new CustomEvent("aiVisionFullProtectionState", { detail: true }));
+          if (!this.siteDisabled) {
+            this.processedImages = new WeakSet();
+            this.scheduleScan();
+          }
+          sendResponse({ success: true, enabled: !this.siteDisabled });
+        });
+        return true;
+      }
       if (message.type === "getTabDetectedAds") {
         const adsList = Array.from(this.detectedAdsMap.values()).map((ad) => ({ id: ad.id, url: ad.url, domain: ad.domain, width: ad.width, height: ad.height, confidence: ad.confidence, method: ad.method, reasons: ad.reasons, isHidden: ad.isHidden }));
         sendResponse({ success: true, ads: adsList });
@@ -558,4 +578,7 @@ class AdBlockerOverlay {
   }
 }
 
-new AdBlockerOverlay();
+if (!globalThis.__aiVisionAdBlockerContentInitialized) {
+  globalThis.__aiVisionAdBlockerContentInitialized = true;
+  new AdBlockerOverlay();
+}

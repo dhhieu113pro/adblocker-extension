@@ -76,6 +76,7 @@ class AdBlockerOverlay {
 
   disableSiteBlocking() {
     this.protectionGeneration += 1;
+    this.restoreJwMutedVideos();
     document.querySelectorAll('[data-webllm-ad-hidden="true"]').forEach((element) => this.unhideElement(element));
     this.detectedAdsMap.clear();
     this.adCheckQueue = [];
@@ -89,6 +90,15 @@ class AdBlockerOverlay {
       this.scanTimer = null;
       if (this.autoHideAds && !this.siteDisabled) { this.scanImages(); this.scanVideos(); }
     }, 150);
+  }
+
+  restoreJwMutedVideos() {
+    this.jwMutedVideos.forEach((state, video) => {
+      if (!video.isConnected) return;
+      video.muted = state.muted;
+      video.volume = state.volume;
+    });
+    this.jwMutedVideos.clear();
   }
 
   setupJwAdSkipAutomation() {
@@ -121,14 +131,7 @@ class AdBlockerOverlay {
     readyButton.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window }));
     readyButton.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, view: window }));
     readyButton.click();
-    window.setTimeout(() => {
-      this.jwMutedVideos.forEach((state, video) => {
-        if (!video.isConnected) return;
-        video.muted = state.muted;
-        video.volume = state.volume;
-      });
-      this.jwMutedVideos.clear();
-    }, 150);
+    window.setTimeout(() => this.restoreJwMutedVideos(), 150);
   }
 
   initMessageListener() {

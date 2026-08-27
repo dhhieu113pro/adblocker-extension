@@ -18,13 +18,25 @@ Chrome publishing is part of the unified `vX.Y.Z` release and uses Chrome Web St
 
 Chrome Web Store API v2 cannot create the initial store item, so the Developer Dashboard setup must be completed before the first automated release.
 
+## Store permission declarations
+
+The install-time permission model intentionally keeps broad website access optional while retaining baseline declarative network blocking.
+
+- **Required host permission:** `https://raw.githubusercontent.com/*` is used only to download JSON ad-filter rule data.
+- **Optional site access:** `http://*/*` and `https://*/*` are requested only after the user explicitly chooses **Enable full protection**. The granted access enables automatic page-level ad detection/hiding, popup/redirect handling that depends on page access, and local AI analysis on websites.
+- **Remote code:** select **No**. Executable JavaScript and ONNX Runtime WASM are packaged with the extension. Remote model weights and JSON filter rules are data, not remotely executed code.
+
+Optional broad HTTP/HTTPS access can still receive manual Chrome Web Store review. This design reduces the breadth of permissions required at install time; it does not guarantee that review will be skipped.
+
+When writing the Chrome Web Store host-permission justification, describe the required and optional access separately so reviewers can see that full website access is user-initiated rather than granted automatically at install time.
+
 ## Release
 
-For version `1.0.12`:
+For version `0.1.14`:
 
 ```bash
-git tag v1.0.12
-git push origin v1.0.12
+git tag v0.1.14
+git push origin v0.1.14
 ```
 
 The release workflow uploads the same ZIP used by GitHub Releases and Microsoft Edge Add-ons, waits for asynchronous package processing when necessary, then calls the API v2 `publish` method with `DEFAULT_PUBLISH`.

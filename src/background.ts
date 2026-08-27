@@ -17,7 +17,7 @@ async function setupDnrRules() {
     const existing = await chrome.declarativeNetRequest.getDynamicRules();
     const existingIds = existing.map((r) => r.id);
     const protectionSettings = await chrome.storage.sync.get(["autoHideAds", "disabledSites"]);
-    const { enabled } = getDnrProtectionPolicy(protectionSettings);
+    const { enabled, excludedInitiatorDomains } = getDnrProtectionPolicy(protectionSettings);
     const adDomains = Array.from(AD_DOMAINS);
     const rules = enabled ? adDomains.map((domain, i) => ({
       id: AD_DNR_BASE + i,
@@ -26,6 +26,7 @@ async function setupDnrRules() {
       condition: {
         urlFilter: `||${domain}^`,
         resourceTypes: DNR_RESOURCE_TYPES,
+        ...(excludedInitiatorDomains.length > 0 ? { excludedInitiatorDomains } : {}),
       },
     })) : [];
 
@@ -42,7 +43,7 @@ async function setupDnrRules() {
 setupDnrRules();
 loadRemoteAdRules().then(() => setupDnrRules());
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "sync" && changes.autoHideAds) setupDnrRules();
+  if (area === "sync" && (changes.autoHideAds || changes.disabledSites)) setupDnrRules();
 });
 
 // --- Per-image CLIP result cache (#3) ---

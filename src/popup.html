@@ -21,7 +21,7 @@
           <span>Local visual protection</span>
         </span>
       </div>
-      <span class="version">v1.0.11</span>
+      <span class="version" id="version-label"></span>
     </header>
 
     <nav class="tab-list" role="tablist" aria-label="Popup sections">
@@ -95,10 +95,10 @@
         <div class="setting-row setting-stack">
           <label class="setting-copy" for="vision-model-select">
             <strong>Vision model</strong>
-            <span>MobileNetV4 is recommended for fast local image classification.</span>
+            <span>Fast Local Classifier is recommended for fast local image classification.</span>
           </label>
           <select id="vision-model-select" class="model-select">
-            <option value="mobilenet">MobileNetV4 · Recommended</option>
+            <option value="mobilenet">Fast Local Classifier · Recommended</option>
             <option value="clip">CLIP Vision</option>
           </select>
         </div>

@@ -1,0 +1,33 @@
+name: Sync lockfile version
+
+on:
+  push:
+    branches:
+      - feat/optional-site-access
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/optional-site-access
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Synchronize npm package metadata
+        run: npm version 0.1.14 --no-git-tag-version --allow-same-version
+      - name: Commit lockfile metadata
+        run: |
+          if git diff --quiet -- package-lock.json; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json
+          git commit -m "build: sync lockfile version"
+          git push origin HEAD:feat/optional-site-access

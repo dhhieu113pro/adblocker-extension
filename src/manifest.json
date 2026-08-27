@@ -4,19 +4,19 @@
   "version": "0.1.13",
   "description": "Smart AI-Powered Visual & Heuristic Ad Blocker using CLIP Open-Vocabulary Zero-Shot Vision & Heuristic Rules Engine",
   "permissions": [
-    "activeTab",
     "scripting",
     "offscreen",
     "storage",
     "contextMenus",
     "webNavigation",
-    "tabs",
     "declarativeNetRequest"
   ],
   "host_permissions": [
-    "<all_urls>",
-    "https://raw.githubusercontent.com/*"
+    "<all_urls>"
   ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';"
+  },
   "background": {
     "service_worker": "background.ts",
     "type": "module"

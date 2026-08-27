@@ -1,0 +1,30 @@
+name: Apply revocation scan guard
+
+on:
+  push:
+    branches:
+      - feat/optional-site-access
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/optional-site-access
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply guard
+        run: node scripts/add-revocation-scan-guard.mjs
+      - name: Commit production change
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/content.js
+          git commit -m "fix: stop DOM scans after access revocation"
+          git push origin HEAD:feat/optional-site-access

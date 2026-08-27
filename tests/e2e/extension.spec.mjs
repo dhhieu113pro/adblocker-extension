@@ -91,6 +91,16 @@ test('keeps browser action width fixed when the initial viewport is narrow', asy
   await expect.poll(async () => popup.evaluate(() => Math.round(document.body.getBoundingClientRect().width))).toBe(390);
 });
 
+test('fresh install starts in Basic protection until full site access is granted', async () => {
+  const popup = await openPopup();
+
+  await expect(popup.locator('#status-label')).toHaveText('Basic protection is on');
+  await expect(popup.locator('#status-detail')).toContainText('Known ad networks are blocked');
+  await expect(popup.getByRole('button', { name: 'Enable full protection' })).toBeVisible();
+  await expect(popup.locator('#site-block-toggle')).toBeDisabled();
+  await expect(popup.locator('#ad-list')).toContainText('Enable full protection');
+});
+
 test('opens Overview by default and captures every popup tab', async () => {
   expect(extensionId).toBeTruthy();
   expect(popupPath).toBeTruthy();

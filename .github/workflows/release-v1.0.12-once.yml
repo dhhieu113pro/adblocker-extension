@@ -1,0 +1,95 @@
+name: Release v1.0.12 once
+
+on:
+  push:
+    branches:
+      - fix/restore-release-version-sequence
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      artifact_name: ${{ steps.release.outputs.artifact_name }}
+      package_filename: ${{ steps.release.outputs.package_filename }}
+    steps:
+      - name: Checkout v1.0.12
+        uses: actions/checkout@v4
+        with:
+          ref: v1.0.12
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Validate unified release version
+        id: release
+        run: npm run release:validate -- "v1.0.12"
+      - name: Verify tagged commit
+        run: test "$(git rev-parse HEAD)" = "c5930a2af866147aa89eac0831d63ba68a3239ad"
+      - name: Run tests with 100% coverage gate
+        run: npm run test:coverage
+      - name: Build extension
+        run: npm run build
+      - name: Install Playwright test runner
+        run: npm install --no-save --package-lock=false @playwright/test@1.55.0
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Run installed-extension E2E tests
+        run: npm run test:e2e
+      - name: Package and validate extension ZIP
+        shell: bash
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+          PACKAGE_FILENAME: ${{ steps.release.outputs.package_filename }}
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          (cd dist && zip -qr "../release/$PACKAGE_FILENAME" .)
+          zipinfo -1 "release/$PACKAGE_FILENAME" | grep -Fx 'manifest.json'
+          ZIP_VERSION="$(unzip -p "release/$PACKAGE_FILENAME" manifest.json | jq -r '.version')"
+          test "$ZIP_VERSION" = "$VERSION"
+      - name: Upload unified package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.release.outputs.artifact_name }}
+          path: release/${{ steps.release.outputs.package_filename }}
+          if-no-files-found: error
+          retention-days: 30
+
+  github-release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download unified package artifact
+        uses: actions/download-artifact@v5
+        with:
+          name: ${{ needs.build.outputs.artifact_name }}
+          path: release
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.12
+          target_commitish: c5930a2af866147aa89eac0831d63ba68a3239ad
+          files: release/${{ needs.build.outputs.package_filename }}
+          generate_release_notes: true
+
+  edge-store:
+    needs: build
+    uses: ./.github/workflows/edge-store.yml
+    with:
+      version: ${{ needs.build.outputs.version }}
+      artifact_name: ${{ needs.build.outputs.artifact_name }}
+      package_filename: ${{ needs.build.outputs.package_filename }}
+    secrets:
+      EDGE_CLIENT_ID: ${{ secrets.EDGE_CLIENT_ID }}
+      EDGE_API_KEY: ${{ secrets.EDGE_API_KEY }}
+      EDGE_PRODUCT_ID: ${{ secrets.EDGE_PRODUCT_ID }}

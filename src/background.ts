@@ -1,5 +1,6 @@
 import { isAdUrl, isExternalAdUrl, isStreamingKeywordSite, isLocalDevelopmentUrl, AD_DOMAINS, loadRemoteAdRules } from "./shared";
 import { FULL_SITE_ORIGINS, syncFullProtectionRegistration } from "./site-access";
+import { getDnrProtectionPolicy } from "./protection-state.mjs";
 
 const tabBlockedCounts = new Map<number, number>();
 const tabCategories = new Map<number, { category: string, confidence: number }>();
@@ -15,8 +16,10 @@ async function setupDnrRules() {
   try {
     const existing = await chrome.declarativeNetRequest.getDynamicRules();
     const existingIds = existing.map((r) => r.id);
+    const protectionSettings = await chrome.storage.sync.get(["autoHideAds", "disabledSites"]);
+    const { enabled } = getDnrProtectionPolicy(protectionSettings);
     const adDomains = Array.from(AD_DOMAINS);
-    const rules = adDomains.map((domain, i) => ({
+    const rules = enabled ? adDomains.map((domain, i) => ({
       id: AD_DNR_BASE + i,
       priority: 1,
       action: { type: "block" as const },
@@ -24,7 +27,7 @@ async function setupDnrRules() {
         urlFilter: `||${domain}^`,
         resourceTypes: DNR_RESOURCE_TYPES,
       },
-    }));
+    })) : [];
 
     await chrome.declarativeNetRequest.updateDynamicRules({
       removeRuleIds: existingIds,
@@ -38,6 +41,9 @@ async function setupDnrRules() {
 
 setupDnrRules();
 loadRemoteAdRules().then(() => setupDnrRules());
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "sync" && changes.autoHideAds) setupDnrRules();
+});
 
 // --- Per-image CLIP result cache (#3) ---
 const CLIP_CACHE_KEY = "webllmClipCache";

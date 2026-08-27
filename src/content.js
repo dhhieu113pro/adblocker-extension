@@ -56,7 +56,12 @@ class AdBlockerOverlay {
     chrome.storage?.onChanged?.addListener((changes, area) => {
       if (area === "sync" && changes.autoHideAds) {
         this.autoHideAds = changes.autoHideAds.newValue;
-        if (this.autoHideAds) this.scheduleScan();
+        if (this.autoHideAds) {
+          this.processedImages = new WeakSet();
+          this.scheduleScan();
+        } else {
+          this.disableSiteBlocking();
+        }
       }
       if (area === "sync" && changes.disabledSites) {
         const disabled = (changes.disabledSites.newValue || []).includes(window.location.hostname.toLowerCase());
@@ -69,10 +74,11 @@ class AdBlockerOverlay {
   }
 
   disableSiteBlocking() {
-    this.detectedAdsMap.forEach((ad) => this.unhideElement(ad.targetElement));
+    document.querySelectorAll('[data-webllm-ad-hidden="true"]').forEach((element) => this.unhideElement(element));
     this.detectedAdsMap.clear();
     this.adCheckQueue = [];
     this.adCheckUrls.clear();
+    this.processedImages = new WeakSet();
   }
 
   scheduleScan() {

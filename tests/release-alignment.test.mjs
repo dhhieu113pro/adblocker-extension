@@ -10,19 +10,39 @@ function readText(relativePath) {
   return readFileSync(new URL(relativePath, import.meta.url), "utf8");
 }
 
-test("release metadata targets v0.1.14", () => {
+function compareVersions(left, right) {
+  const a = left.split(".").map(Number);
+  const b = right.split(".").map(Number);
+  for (let i = 0; i < Math.max(a.length, b.length); i += 1) {
+    const delta = (a[i] ?? 0) - (b[i] ?? 0);
+    if (delta !== 0) return Math.sign(delta);
+  }
+  return 0;
+}
+
+test("release metadata targets v1.0.12", () => {
   const packageJson = readJson("../package.json");
   const manifest = readJson("../src/manifest.json");
 
-  assert.equal(packageJson.version, "0.1.14");
-  assert.equal(manifest.version, "0.1.14");
+  assert.equal(packageJson.version, "1.0.12");
+  assert.equal(manifest.version, "1.0.12");
 });
 
-test("lockfile metadata targets v0.1.14", () => {
+test("lockfile metadata targets v1.0.12", () => {
   const packageLock = readJson("../package-lock.json");
 
-  assert.equal(packageLock.version, "0.1.14");
-  assert.equal(packageLock.packages[""].version, "0.1.14");
+  assert.equal(packageLock.version, "1.0.12");
+  assert.equal(packageLock.packages[""].version, "1.0.12");
+});
+
+test("release version stays above the published Edge Store baseline", () => {
+  const manifest = readJson("../src/manifest.json");
+
+  assert.equal(
+    compareVersions(manifest.version, "1.0.11") > 0,
+    true,
+    `release ${manifest.version} must be higher than published Edge version 1.0.11`,
+  );
 });
 
 test("popup version is derived from the manifest instead of hard-coded", () => {

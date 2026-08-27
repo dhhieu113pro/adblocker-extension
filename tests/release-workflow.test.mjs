@@ -35,5 +35,5 @@ test("release metadata stays synchronized", () => {
   const packageJson = JSON.parse(read("package.json"));
 
   assert.equal(manifest.version, packageJson.version);
-  assert.equal(manifest.version, "0.1.14");
+  assert.equal(manifest.version, "1.0.12");
 });

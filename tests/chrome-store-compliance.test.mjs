@@ -15,16 +15,31 @@ function readJson(relativePath) {
   return JSON.parse(readText(relativePath));
 }
 
-test("Chrome Store manifest keeps only required broad-access permissions", () => {
+test("Chrome Store manifest makes broad browsing access optional", () => {
   const manifest = readJson("src/manifest.json");
 
   assert.equal(manifest.permissions.includes("activeTab"), false);
   assert.equal(manifest.permissions.includes("tabs"), false);
-  assert.deepEqual(manifest.host_permissions, ["<all_urls>"]);
+  assert.deepEqual(manifest.host_permissions, ["https://raw.githubusercontent.com/*"]);
+  assert.deepEqual(manifest.optional_host_permissions, ["http://*/*", "https://*/*"]);
+  assert.equal("content_scripts" in manifest, false);
+  assert.equal("web_accessible_resources" in manifest, false);
+  assert.equal(manifest.version, "0.1.14");
   assert.equal(
     manifest.content_security_policy?.extension_pages,
     "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';"
   );
+});
+
+test("Chrome Store build packages stable runtime scripts", () => {
+  const packageJson = readJson("package.json");
+  const copyScript = readText("scripts/copy-wasm.js");
+
+  assert.equal(packageJson.version, "0.1.14");
+  assert.match(packageJson.scripts["build:runtime"] || "", /parcel build src\/content\.js src\/inject\.ts/);
+  assert.match(packageJson.scripts.build, /npm run build:runtime/);
+  assert.match(copyScript, /runtime\/content\.js|runtime["'],\s*["']content\.js/);
+  assert.match(copyScript, /runtime\/inject\.js|runtime["'],\s*["']inject\.js/);
 });
 
 test("offscreen inference resolves ONNX runtime WASM from the extension package", () => {

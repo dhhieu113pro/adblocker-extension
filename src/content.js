@@ -13,6 +13,7 @@ class AdBlockerOverlay {
     this.adCheckQueue = [];
     this.adCheckProcessing = false;
     this.adCheckUrls = new Set();
+    this.protectionGeneration = 0;
     this.scanTimer = null;
     this.jwMutedVideos = new Map();
     this.jwSkipTimer = null;
@@ -74,6 +75,7 @@ class AdBlockerOverlay {
   }
 
   disableSiteBlocking() {
+    this.protectionGeneration += 1;
     document.querySelectorAll('[data-webllm-ad-hidden="true"]').forEach((element) => this.unhideElement(element));
     this.detectedAdsMap.clear();
     this.adCheckQueue = [];
@@ -408,11 +410,12 @@ class AdBlockerOverlay {
     this.adCheckProcessing = true;
     while (this.adCheckQueue.length > 0) {
       const { img, msg } = this.adCheckQueue.shift();
+      const generation = this.protectionGeneration;
       if (!img?.isConnected) continue;
       const imageDataUrl = await this.fetchImageDataUrl(msg.imageUrl);
       await new Promise((resolve) => {
         chrome.runtime.sendMessage({ type: "detectAd", ...msg, imageDataUrl }, (res) => {
-          if (res?.isAd && res.confidence >= 50 && img?.isConnected) { this.hideAd(img, res); this.cleanupEmptyAdContainers(); }
+          if (generation === this.protectionGeneration && this.autoHideAds && !this.siteDisabled && res?.isAd && res.confidence >= 50 && img?.isConnected) { this.hideAd(img, res); this.cleanupEmptyAdContainers(); }
           resolve();
         });
       });

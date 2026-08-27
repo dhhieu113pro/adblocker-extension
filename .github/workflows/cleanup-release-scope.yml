@@ -1,0 +1,40 @@
+name: Clean release diff
+
+on:
+  push:
+    branches:
+      - release/v0.1.14-alignment
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: release/v0.1.14-alignment
+
+      - name: Restore unrelated type formatting
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = 'src/background.ts';
+          let source = fs.readFileSync(path, 'utf8');
+          const current = 'const categoryCache = new Map<string, { category: string; confidence: number }>();';
+          const original = 'const categoryCache = new Map<string, { category: string, confidence: number }>();';
+          if (!source.includes(current)) throw new Error('Expected formatting drift was not found');
+          source = source.replace(current, original);
+          fs.writeFileSync(path, source);
+          NODE
+
+      - name: Commit cleanup
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/background.ts
+          git diff --cached --quiet && exit 0
+          git commit -m "chore: remove unrelated release diff"
+          git push origin HEAD:release/v0.1.14-alignment

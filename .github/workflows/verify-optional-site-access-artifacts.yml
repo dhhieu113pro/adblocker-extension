@@ -1,0 +1,63 @@
+name: Verify optional site access artifacts
+
+on:
+  push:
+    branches:
+      - feat/optional-site-access
+
+permissions:
+  contents: read
+
+jobs:
+  verify-artifacts:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Build extension
+        run: npm run build
+      - name: Inspect built manifest and runtime artifacts
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const manifest = require('./dist/manifest.json');
+          const summary = {
+            version: manifest.version,
+            permissions: manifest.permissions,
+            host_permissions: manifest.host_permissions,
+            optional_host_permissions: manifest.optional_host_permissions,
+            content_scripts: manifest.content_scripts,
+          };
+          console.log(JSON.stringify(summary, null, 2));
+
+          const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+          if (manifest.version !== '0.1.14') throw new Error(`Unexpected version: ${manifest.version}`);
+          if (!same(manifest.host_permissions, ['https://raw.githubusercontent.com/*'])) {
+            throw new Error(`Unexpected required host permissions: ${JSON.stringify(manifest.host_permissions)}`);
+          }
+          if (!same(manifest.optional_host_permissions, ['http://*/*', 'https://*/*'])) {
+            throw new Error(`Unexpected optional host permissions: ${JSON.stringify(manifest.optional_host_permissions)}`);
+          }
+          if ('content_scripts' in manifest) throw new Error('Built manifest unexpectedly contains static content_scripts');
+
+          const files = [
+            'dist/runtime/content.js',
+            'dist/runtime/inject.js',
+            'dist/wasm/ort-wasm.wasm',
+            'dist/wasm/ort-wasm-simd.wasm',
+            'dist/wasm/ort-wasm-threaded.wasm',
+            'dist/wasm/ort-wasm-simd-threaded.wasm',
+          ];
+          for (const file of files) {
+            const stat = fs.statSync(file);
+            console.log(`${file}: ${stat.size} bytes`);
+            if (stat.size <= 0) throw new Error(`Empty artifact: ${file}`);
+          }
+          NODE

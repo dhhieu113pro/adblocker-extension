@@ -49,7 +49,7 @@ let clipCacheLoadPromise: Promise<void> | undefined;
 let clipCacheSaveTimer: number | undefined;
 const inFlightClassify = new Map<string, Promise<any>>();
 const lastCommittedUrls = new Map<number, string>();
-const categoryCache = new Map<string, { category: string; confidence: number }>();
+const categoryCache = new Map<string, { category: string, confidence: number }>();
 
 async function loadClipCache() {
   if (clipCacheLoaded) return;

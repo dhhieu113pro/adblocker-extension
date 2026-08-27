@@ -55,3 +55,16 @@ test('per-site bypass also stops iframe scanning in the content layer', () => {
 
   assert.match(iframeScan, /if \(!this\.autoHideAds \|\| this\.siteDisabled\) return;/);
 });
+
+test('disabling protection invalidates in-flight automatic ad checks', () => {
+  const content = read('src/content.js');
+  const constructor = section(content, '  constructor() {', '  async init() {');
+  const disable = section(content, '  disableSiteBlocking() {', '  scheduleScan() {');
+  const queue = section(content, '  async processAdCheckQueue() {', '  getAdTargetContainer(img) {');
+
+  assert.match(constructor, /this\.protectionGeneration = 0;/);
+  assert.match(disable, /this\.protectionGeneration \+= 1;/);
+  assert.match(queue, /const generation = this\.protectionGeneration;/);
+  assert.match(queue, /generation === this\.protectionGeneration/);
+  assert.match(queue, /this\.autoHideAds && !this\.siteDisabled/);
+});

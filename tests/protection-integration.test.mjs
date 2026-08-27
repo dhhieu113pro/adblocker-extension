@@ -68,3 +68,15 @@ test('disabling protection invalidates in-flight automatic ad checks', () => {
   assert.match(queue, /generation === this\.protectionGeneration/);
   assert.match(queue, /this\.autoHideAds && !this\.siteDisabled/);
 });
+
+test('disabling protection restores JW Player audio immediately', () => {
+  const content = read('src/content.js');
+  const disable = section(content, '  disableSiteBlocking() {', '  scheduleScan() {');
+  const restore = section(content, '  restoreJwMutedVideos() {', '  setupJwAdSkipAutomation() {');
+
+  assert.match(disable, /this\.restoreJwMutedVideos\(\);/);
+  assert.match(restore, /this\.jwMutedVideos\.forEach\(\(state, video\) =>/);
+  assert.match(restore, /video\.muted = state\.muted;/);
+  assert.match(restore, /video\.volume = state\.volume;/);
+  assert.match(restore, /this\.jwMutedVideos\.clear\(\);/);
+});

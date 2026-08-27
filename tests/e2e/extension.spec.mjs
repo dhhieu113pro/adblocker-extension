@@ -6,6 +6,7 @@ import { mkdir, readFile, stat } from 'node:fs/promises';
 let context;
 let extensionId;
 let popupPath;
+let extensionVersion;
 let server;
 let baseUrl;
 const screenshotDir = path.resolve('artifacts');
@@ -27,6 +28,7 @@ test.beforeAll(async () => {
   const extensionPath = path.resolve('dist');
   const manifest = JSON.parse(await readFile(path.join(extensionPath, 'manifest.json'), 'utf8'));
   popupPath = manifest.action?.default_popup;
+  extensionVersion = manifest.version;
   if (!popupPath) throw new Error('Built manifest does not define action.default_popup');
 
   context = await chromium.launchPersistentContext('', {
@@ -104,9 +106,11 @@ test('fresh install starts in Basic protection until full site access is granted
 test('opens Overview by default and captures every popup tab', async () => {
   expect(extensionId).toBeTruthy();
   expect(popupPath).toBeTruthy();
+  expect(extensionVersion).toBeTruthy();
 
   const popup = await openPopup();
   await expect(popup.getByText('AI Vision Ad Blocker')).toBeVisible();
+  await expect(popup.locator('#version-label')).toHaveText(`v${extensionVersion}`);
 
   const overviewTab = popup.getByRole('tab', { name: 'Overview' });
   const settingsTab = popup.getByRole('tab', { name: 'Settings' });
@@ -156,7 +160,7 @@ test('supports keyboard navigation across popup tabs', async () => {
   await expect(overviewTab).toBeFocused();
 });
 
-test('defaults to MobileNetV4 when no vision model preference is stored', async () => {
+test('keeps the legacy mobilenet preference as the default fast classifier key', async () => {
   const popup = await openPopup();
 
   await popup.evaluate(() => new Promise((resolve) => chrome.storage.sync.remove('visionModel', resolve)));
@@ -166,11 +170,11 @@ test('defaults to MobileNetV4 when no vision model preference is stored', async 
   await expect(popup.locator('#vision-model-select')).toHaveValue('mobilenet');
 });
 
-test('labels MobileNetV4 as the recommended vision model', async () => {
+test('labels the fast local classifier as the recommended vision model', async () => {
   const popup = await openPopup();
   await popup.getByRole('tab', { name: 'Settings' }).click();
 
-  await expect(popup.locator('#vision-model-select option[value="mobilenet"]')).toHaveText('MobileNetV4 · Recommended');
+  await expect(popup.locator('#vision-model-select option[value="mobilenet"]')).toHaveText('Fast Local Classifier · Recommended');
   await expect(popup.locator('#vision-model-select option[value="clip"]')).toHaveText('CLIP Vision');
 });
 
@@ -222,7 +226,7 @@ test('renders and clears blocked history from the History tab', async () => {
   })).toEqual([]);
 });
 
-test('content script hides a known ad container on a real HTTP page', async () => {
+test('baseline mode leaves page DOM untouched before full site access is granted', async () => {
   const page = await context.newPage();
   await page.goto(baseUrl);
 
@@ -230,7 +234,7 @@ test('content script hides a known ad container on a real HTTP page', async () =
   await expect.poll(async () => page.locator('#adbro').evaluate((el) => ({
     hidden: el.dataset.webllmAdHidden,
     display: getComputedStyle(el).display,
-  }))).toEqual({ hidden: 'true', display: 'none' });
+  }))).toEqual({ hidden: undefined, display: 'block' });
 });
 
 test('whole-page CLIP classification is gated behind explicit CLIP selection', async () => {
@@ -256,8 +260,9 @@ test('offscreen uses valid Transformers.js model repositories and a compatible f
   expect(offscreen).toContain('const selectedModel = message.model === "clip" ? "clip" : "mobilenet";');
 });
 
-test('MobileNet image results are labelled as MobileNet instead of CLIP zero-shot', async () => {
+test('fast local image results are labelled accurately instead of as MobileNet', async () => {
   const background = await readFile(path.resolve('src/background.ts'), 'utf8');
 
-  expect(background).toContain('MobileNetV4 Image Classification + Heuristics');
+  expect(background).toContain('Fast Local Classifier + Heuristics');
+  expect(background).not.toContain('MobileNetV4 Image Classification + Heuristics');
 });

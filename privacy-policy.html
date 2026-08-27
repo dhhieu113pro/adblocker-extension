@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Privacy Policy for AI Vision Ad Blocker.">
+  <meta name="color-scheme" content="light dark">
+  <title>Privacy Policy — AI Vision Ad Blocker</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #07111f;
+      --panel: #0d1b2d;
+      --text: #e8f0fb;
+      --muted: #a9b8cf;
+      --accent: #27a2ff;
+      --border: rgba(120, 170, 230, 0.25);
+      --ok: #2dd4bf;
+      --shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+    }
+
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #f4f8fc;
+        --panel: #ffffff;
+        --text: #112033;
+        --muted: #54657d;
+        --accent: #0078d4;
+        --border: rgba(0, 82, 153, 0.16);
+        --ok: #0f9d7a;
+        --shadow: 0 18px 50px rgba(10, 30, 60, 0.10);
+      }
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      font-family: Inter, "Segoe UI", Roboto, Arial, sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(39, 162, 255, 0.18), transparent 36%),
+        radial-gradient(circle at bottom right, rgba(57, 208, 255, 0.14), transparent 28%),
+        var(--bg);
+      color: var(--text);
+      line-height: 1.65;
+    }
+
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .wrap {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 32px 20px 64px;
+    }
+
+    .hero,
+    .card {
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(8px);
+    }
+
+    .hero {
+      border-radius: 24px;
+      padding: 28px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0));
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+
+    .logo {
+      width: 52px;
+      height: 52px;
+      flex: 0 0 auto;
+      border-radius: 14px;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--border);
+      background: rgba(39, 162, 255, 0.10);
+      color: var(--accent);
+      font-size: 28px;
+      font-weight: 700;
+    }
+
+    .eyebrow {
+      margin: 0;
+      color: var(--accent);
+      font-size: 0.92rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 6px 0 10px;
+      font-size: clamp(2rem, 4vw, 3.25rem);
+      line-height: 1.08;
+    }
+
+    h2 {
+      margin: 0 0 12px;
+      font-size: 1.35rem;
+    }
+
+    p { margin: 0 0 14px; }
+
+    .subtitle {
+      max-width: 720px;
+      margin: 0;
+      color: var(--muted);
+      font-size: 1.08rem;
+    }
+
+    .meta {
+      margin-top: 18px;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 0.96rem;
+    }
+
+    .meta-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      background: var(--ok);
+      box-shadow: 0 0 0 6px rgba(45, 212, 191, 0.12);
+    }
+
+    .grid {
+      display: grid;
+      gap: 22px;
+      margin-top: 22px;
+    }
+
+    @media (min-width: 820px) {
+      .grid { grid-template-columns: 1fr 1fr; }
+    }
+
+    .card {
+      background: var(--panel);
+      border-radius: 20px;
+      padding: 26px;
+    }
+
+    ul {
+      margin: 0 0 14px 20px;
+      padding: 0;
+    }
+
+    li + li { margin-top: 8px; }
+
+    .contact { margin-top: 22px; }
+
+    .footer {
+      margin-top: 28px;
+      color: var(--muted);
+      font-size: 0.95rem;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="hero">
+      <div class="brand">
+        <div class="logo" aria-hidden="true">✓</div>
+        <div>
+          <p class="eyebrow">AI Vision Ad Blocker</p>
+          <h1>Privacy Policy</h1>
+        </div>
+      </div>
+
+      <p class="subtitle">
+        AI Vision Ad Blocker is designed to block advertisements while keeping analysis on the user's device.
+        This page explains what data the extension uses, where it is stored, and how it is handled.
+      </p>
+
+      <div class="meta">
+        <span class="meta-dot" aria-hidden="true"></span>
+        <span>Last updated: August 16, 2026</span>
+      </div>
+    </section>
+
+    <section class="grid">
+      <article class="card">
+        <h2>Data collection</h2>
+        <p>
+          The extension does not collect, sell, or transmit personal information, browsing history,
+          page content, images, or visited URLs to the developer.
+        </p>
+      </article>
+
+      <article class="card">
+        <h2>Local AI processing</h2>
+        <p>
+          Image and page classification runs locally in the browser using the packaged inference runtime
+          and downloaded model data. Images are not uploaded to a developer-operated server.
+        </p>
+      </article>
+
+      <article class="card">
+        <h2>Local browser storage</h2>
+        <p>The extension stores the following data locally in the browser:</p>
+        <ul>
+          <li>Auto-hide and selected vision-model settings.</li>
+          <li>Classification results cached by image URL.</li>
+          <li>A local history of blocked advertising URLs and page URLs.</li>
+          <li>Cached ad-blocking rules downloaded from this repository.</li>
+        </ul>
+        <p>This information is not sent to the developer or shared with third parties.</p>
+      </article>
+
+      <article class="card">
+        <h2>Remote resources</h2>
+        <p>
+          The extension may download model data from Hugging Face and JSON ad-blocking rules from this GitHub repository.
+          The rules are cached locally and are used only to improve advertising detection.
+        </p>
+      </article>
+
+      <article class="card">
+        <h2>Permissions</h2>
+        <p>
+          The extension requests browser permissions only to inspect pages for advertising, block advertising requests
+          and redirects, run local inference, store local settings and results, and provide the user-invoked
+          image-analysis context-menu action.
+        </p>
+      </article>
+
+      <article class="card">
+        <h2>Changes</h2>
+        <p>
+          This policy may be updated when the extension's data practices change.
+          The latest version will be published in this repository and on this page.
+        </p>
+      </article>
+    </section>
+
+    <section class="card contact">
+      <h2>Contact</h2>
+      <p>For privacy questions or requests, open an issue in the project repository:</p>
+      <p>
+        <a href="https://github.com/dhhieu113pro/adblocker-extension/issues">
+          github.com/dhhieu113pro/adblocker-extension/issues
+        </a>
+      </p>
+      <p>
+        Source repository:
+        <a href="https://github.com/dhhieu113pro/adblocker-extension">
+          github.com/dhhieu113pro/adblocker-extension
+        </a>
+      </p>
+    </section>
+
+    <p class="footer">AI Vision Ad Blocker — local visual protection with privacy-first design.</p>
+  </main>
+</body>
+</html>

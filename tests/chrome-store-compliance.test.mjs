@@ -52,3 +52,15 @@ test("post-build step packages every ONNX Runtime 1.14 WASM fallback", () => {
     assert.equal(source.includes(file), true, `copy-wasm.js must package ${file}`);
   }
 });
+
+test("Chrome Store privacy policy has a public GitHub Pages HTML source", () => {
+  const page = readText("privacy-policy.html");
+
+  assert.match(page, /<title>Privacy Policy — AI Vision Ad Blocker<\/title>/);
+  assert.match(page, /does not collect, sell, or transmit personal information/i);
+  assert.match(page, /classification runs locally in the browser/i);
+  assert.match(page, /not sent to the developer or shared with third parties/i);
+  assert.match(page, /https:\/\/github\.com\/dhhieu113pro\/adblocker-extension\/issues/);
+  assert.doesNotMatch(page, /<script\b/i);
+  assert.doesNotMatch(page, /google-analytics|gtag\(|analytics\.js|googletagmanager/i);
+});

@@ -272,7 +272,7 @@ class AdBlockerOverlay {
   }
 
   scanIframes() {
-    if (!this.autoHideAds) return;
+    if (!this.autoHideAds || this.siteDisabled) return;
     Array.from(document.querySelectorAll("iframe")).forEach((iframe) => {
       if (this.processedImages.has(iframe)) return;
       if (this.isAdIframeCandidate(iframe)) { this.processedImages.add(iframe); this.hideAdIframe(iframe); }

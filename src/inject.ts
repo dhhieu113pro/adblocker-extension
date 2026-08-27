@@ -1,4 +1,5 @@
 import { isAdUrl as sharedIsAdUrl, isStreamingKeywordSite, isLocalDevelopmentUrl } from "./shared";
+import { isAutomaticProtectionEnabled } from "./protection-state.mjs";
 
 (function() {
   if ((window as any).__aiVisionAdBlockerMainInitialized) return;
@@ -11,13 +12,21 @@ import { isAdUrl as sharedIsAdUrl, isStreamingKeywordSite, isLocalDevelopmentUrl
 
   let tabCategory = "General Site";
   let siteBlockingEnabled = true;
+  let currentProtectionSettings: { autoHideAds?: boolean; disabledSites?: string[] } = {};
+  const applyProtectionSettings = (settings: typeof currentProtectionSettings) => {
+    currentProtectionSettings = settings;
+    siteBlockingEnabled = isAutomaticProtectionEnabled(settings, window.location.href);
+  };
   try {
-    chrome.storage.sync.get(["disabledSites"], (res) => {
-      siteBlockingEnabled = !(res.disabledSites || []).includes(window.location.hostname.toLowerCase());
+    chrome.storage.sync.get(["autoHideAds", "disabledSites"], (settings) => {
+      applyProtectionSettings(settings);
     });
     chrome.storage.onChanged.addListener((changes, area) => {
-      if (area === "sync" && changes.disabledSites) {
-        siteBlockingEnabled = !(changes.disabledSites.newValue || []).includes(window.location.hostname.toLowerCase());
+      if (area === "sync" && (changes.autoHideAds || changes.disabledSites)) {
+        applyProtectionSettings({
+          autoHideAds: changes.autoHideAds ? changes.autoHideAds.newValue : currentProtectionSettings.autoHideAds,
+          disabledSites: changes.disabledSites ? changes.disabledSites.newValue : currentProtectionSettings.disabledSites,
+        });
       }
     });
   } catch {}
@@ -40,7 +49,7 @@ import { isAdUrl as sharedIsAdUrl, isStreamingKeywordSite, isLocalDevelopmentUrl
 
   // Helper to determine if we should block the target popup URL based on context
   const shouldBlockRedirect = (targetUrl: string): boolean => {
-    if (!fullProtectionEnabled) return false;
+    if (!fullProtectionEnabled || !siteBlockingEnabled) return false;
     const isStreaming = isStreamingOrAdProneSite(window.location.href);
     // If it's a streaming site, strictly block any external URL (except whitelist/same-brand)
     // If it's a normal site, only block if the target URL explicitly matches known ad domains
@@ -129,7 +138,7 @@ import { isAdUrl as sharedIsAdUrl, isStreamingKeywordSite, isLocalDevelopmentUrl
 
   // Intercept click hijacking via dynamic link clicks (capturing phase)
   window.addEventListener("click", (e: MouseEvent) => {
-    if (!fullProtectionEnabled) return;
+    if (!fullProtectionEnabled || !siteBlockingEnabled) return;
     if (isLocalDevelopmentUrl(window.location.href)) return;
     const target = e.target as HTMLElement;
     if (!target) return;

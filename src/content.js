@@ -1,12 +1,13 @@
 // AI Vision & Heuristic Ad Blocker Content Script
 import { isHardAdNetwork, AD_CONTAINER_SELECTORS, loadRemoteAdRules } from "./shared";
 import { shouldRemoveTransparentAdOverlay } from "./transparent-ad-overlay-policy.mjs";
-import { shouldAutoAnalyzeImageCandidate, shouldBlockDetectionResult } from "./image-ad-policy.mjs";
+import { shouldAutoAnalyzeImageCandidate, shouldBlockDetectionResult, buildImageFingerprint } from "./image-ad-policy.mjs";
 
 class AdBlockerOverlay {
   constructor() {
     this.processedImages = new WeakSet();
     this.processedImageUrls = new WeakMap();
+    this.processedImageFingerprints = new WeakMap();
     this.currentPageUrl = window.location.href;
     this.detectedAdsMap = new Map();
     this.autoHideAds = true;
@@ -39,8 +40,10 @@ class AdBlockerOverlay {
       if (!this.autoHideAds || this.siteDisabled) return;
       this.processedImages = new WeakSet();
       this.processedImageUrls = new WeakMap();
+      this.processedImageFingerprints = new WeakMap();
       this.scheduleScan();
     });
+    setInterval(() => this.scanChangedImages(), 1000);
     setInterval(() => this.scanClickjackingOverlays(), 1000);
   }
 
@@ -70,6 +73,7 @@ class AdBlockerOverlay {
         if (this.autoHideAds) {
           this.processedImages = new WeakSet();
           this.processedImageUrls = new WeakMap();
+          this.processedImageFingerprints = new WeakMap();
           this.scheduleScan();
         } else {
           this.disableSiteBlocking();
@@ -79,7 +83,7 @@ class AdBlockerOverlay {
         const disabled = (changes.disabledSites.newValue || []).includes(window.location.hostname.toLowerCase());
         this.siteDisabled = disabled;
         if (disabled) this.disableSiteBlocking();
-        else { this.processedImages = new WeakSet(); this.processedImageUrls = new WeakMap(); this.scheduleScan(); }
+        else { this.processedImages = new WeakSet(); this.processedImageUrls = new WeakMap(); this.processedImageFingerprints = new WeakMap(); this.scheduleScan(); }
       }
       if (area === "sync" && changes.allowedAds) this.allowedAds = new Set(changes.allowedAds.newValue || []);
     });
@@ -94,6 +98,7 @@ class AdBlockerOverlay {
     this.adCheckUrls.clear();
     this.processedImages = new WeakSet();
     this.processedImageUrls = new WeakMap();
+    this.processedImageFingerprints = new WeakMap();
   }
 
   scheduleScan() {
@@ -163,6 +168,7 @@ class AdBlockerOverlay {
           if (!this.siteDisabled) {
             this.processedImages = new WeakSet();
             this.processedImageUrls = new WeakMap();
+            this.processedImageFingerprints = new WeakMap();
             this.scheduleScan();
           }
           sendResponse({ success: true, enabled: !this.siteDisabled });
@@ -224,6 +230,7 @@ class AdBlockerOverlay {
     this.adCheckUrls.clear();
     this.processedImages = new WeakSet();
     this.processedImageUrls = new WeakMap();
+    this.processedImageFingerprints = new WeakMap();
     if (!this.autoHideAds || this.siteDisabled) return;
     this.scanImages();
     this.scanVideos();
@@ -250,10 +257,11 @@ class AdBlockerOverlay {
     const observer = new MutationObserver((mutations) => {
       if (window.location.href !== this.currentPageUrl) this.handlePageNavigation();
       let hasNewNodes = false;
-      let hasImageSourceChange = false;
+      let hasImageCandidateChange = false;
       for (const m of mutations) {
         if (m.type === "childList" && m.addedNodes.length > 0) hasNewNodes = true;
-        if (m.type === "attributes" && m.target?.tagName === "IMG" && ["src", "data-src", "data-lazy-src"].includes(m.attributeName)) hasImageSourceChange = true;
+        if (m.type === "attributes" && m.target?.tagName === "IMG" && ["src", "data-src", "data-lazy-src"].includes(m.attributeName)) hasImageCandidateChange = true;
+        if (m.type === "attributes" && m.target?.tagName === "A" && m.attributeName === "href") hasImageCandidateChange = true;
         if (m.type === "attributes" && m.attributeName === "style" && m.target) {
           const target = m.target;
           if (target.dataset?.webllmAdHidden === "true" && (target.style.display !== "none" || target.style.visibility !== "hidden")) this.hideElement(target);
@@ -261,10 +269,10 @@ class AdBlockerOverlay {
       }
       if (hasNewNodes) this.scanClickjackingOverlays();
       if (hasNewNodes) this.scanKnownAdSlots();
-      if (hasImageSourceChange) this.scanImages();
+      if (hasImageCandidateChange) this.scanImages();
       this.scheduleScan();
     });
-    observer.observe(document.body || document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["style", "class", "src", "data-src", "data-lazy-src"] });
+    observer.observe(document.body || document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["style", "class", "src", "data-src", "data-lazy-src", "href"] });
   }
 
   scanKnownAdSlots() {
@@ -290,8 +298,10 @@ class AdBlockerOverlay {
     const url = img.currentSrc || img.src || "";
     const alt = img.alt || "";
     const parentClasses = img.closest("header, nav, .logo, .logo-brand, #nav")?.className?.toString() || "";
-    const linkRel = img.closest("a")?.getAttribute("rel") || "";
-    return shouldAutoAnalyzeImageCandidate({ width, height, url, alt, parentClasses, linkRel });
+    const link = img.closest("a");
+    const linkUrl = link?.href || "";
+    const linkRel = link?.getAttribute("rel") || "";
+    return shouldAutoAnalyzeImageCandidate({ width, height, url, alt, parentClasses, linkUrl, linkRel });
   }
 
   isAdIframeCandidate(iframe) {
@@ -400,16 +410,34 @@ class AdBlockerOverlay {
     return img.currentSrc || img.src || img.getAttribute("data-src") || img.getAttribute("data-lazy-src") || "";
   }
 
+  getImageFingerprint(img) {
+    const linkUrl = img.closest("a")?.href || "";
+    const width = parseInt(img.getAttribute("width") || "0", 10) || img.naturalWidth || img.width || 0;
+    const height = parseInt(img.getAttribute("height") || "0", 10) || img.naturalHeight || img.height || 0;
+    return buildImageFingerprint({ imageUrl: this.getImageSource(img), linkUrl, width, height });
+  }
+
+  scanChangedImages() {
+    if (!this.autoHideAds || this.siteDisabled) return;
+    const hasChangedImage = Array.from(document.querySelectorAll("img")).some(
+      (img) => this.processedImageFingerprints.get(img) !== this.getImageFingerprint(img),
+    );
+    if (hasChangedImage) this.scanImages();
+  }
+
   scanImages() {
     if (this.siteDisabled) return;
     this.scanIframes();
     this.scanKnownAdSlots();
     Array.from(document.querySelectorAll("img")).forEach((img) => {
-      const initialSrc = this.getImageSource(img);
-      if (this.processedImageUrls.get(img) === initialSrc) return;
+      const initialFingerprint = this.getImageFingerprint(img);
+      if (this.processedImageFingerprints.get(img) === initialFingerprint) return;
       const checkAndProcess = () => {
         const imgSrc = this.getImageSource(img);
-        if (this.processedImageUrls.get(img) === imgSrc) return;
+        const fingerprint = this.getImageFingerprint(img);
+        const sameSource = this.processedImageUrls.get(img) === imgSrc;
+        if (sameSource && this.processedImageFingerprints.get(img) === fingerprint) return;
+        this.processedImageFingerprints.set(img, fingerprint);
         if (!this.shouldAnalyzeImage(img)) return;
         this.processedImageUrls.set(img, imgSrc);
         if (!this.autoHideAds) return;

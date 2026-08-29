@@ -23,6 +23,15 @@ async function waitForExtensionServiceWorker(ctx) {
   return found;
 }
 
+async function reloadExtensionServiceWorker() {
+  const nextWorker = context.waitForEvent('serviceworker', {
+    predicate: (item) => item.url().startsWith('chrome-extension://'),
+    timeout: 5000,
+  });
+  await worker.evaluate(() => chrome.runtime.reload());
+  worker = await nextWorker;
+}
+
 test.beforeAll(async () => {
   const extensionPath = path.resolve('dist');
   context = await chromium.launchPersistentContext('', {
@@ -88,7 +97,7 @@ test.beforeEach(async () => {
   });
 });
 
-test('previously classified ads are hidden from cache without refetching pixels', async () => {
+test('previously classified ads are hidden from persisted cache without refetching pixels', async () => {
   const imageUrl = `${baseUrl}/creative.svg`;
   await worker.evaluate(async ({ imageUrl }) => {
     await chrome.storage.local.set({
@@ -103,6 +112,7 @@ test('previously classified ads are hidden from cache without refetching pixels'
       },
     });
   }, { imageUrl });
+  await reloadExtensionServiceWorker();
 
   const page = await context.newPage();
   await page.goto(`${baseUrl}/cached-page`);
@@ -116,7 +126,7 @@ test('previously classified ads are hidden from cache without refetching pixels'
   await page.close();
 });
 
-test('strong heuristic ads are hidden without an extension-side pixel refetch', async () => {
+test('strong heuristic ads are hidden from HTML dimensions without an extension-side pixel refetch', async () => {
   const page = await context.newPage();
   await page.goto(`${baseUrl}/heuristic-page`);
 

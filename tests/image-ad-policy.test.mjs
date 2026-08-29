@@ -3,17 +3,28 @@ import assert from "node:assert/strict";
 
 import {
   shouldAnalyzeImage,
+  shouldAutoAnalyzeImageCandidate,
   hasExplicitAdCloseSignal,
   hasExplicitAdOverlayMarker,
   buildImageDetectionRequest,
   shouldBlockDetectionResult,
 } from "../src/image-ad-policy.mjs";
 
-test("normal images are analyzed regardless of aspect ratio", () => {
-  assert.equal(shouldAnalyzeImage({ width: 1200, height: 200, url: "https://chat.zalo.me/photo-wide.jpg" }), true);
-  assert.equal(shouldAnalyzeImage({ width: 200, height: 1200, url: "https://chat.zalo.me/photo-tall.jpg" }), true);
-  assert.equal(shouldAnalyzeImage({ width: 300, height: 250, url: "https://chat.zalo.me/photo-iab-size.jpg" }), true);
-  assert.equal(shouldAnalyzeImage({ width: 728, height: 90, url: "https://chat.zalo.me/photo-banner-size.jpg" }), true);
+test("manual image analysis still accepts normal images", () => {
+  assert.equal(shouldAnalyzeImage({ width: 1200, height: 800, url: "https://media.saostar.vn/news/article-photo.jpg" }), true);
+  assert.equal(shouldAnalyzeImage({ width: 300, height: 250, url: "https://site.test/photo.jpg" }), true);
+});
+
+test("automatic analysis skips ordinary editorial photos without ad context", () => {
+  assert.equal(shouldAutoAnalyzeImageCandidate({ width: 1200, height: 800, url: "https://media.saostar.vn/news/article-photo.jpg" }), false);
+  assert.equal(shouldAutoAnalyzeImageCandidate({ width: 1200, height: 675, url: "https://cdn.site.test/hero.jpg" }), false);
+});
+
+test("automatic analysis accepts images with explicit ad evidence", () => {
+  assert.equal(shouldAutoAnalyzeImageCandidate({ width: 728, height: 90, url: "https://cdn.site.test/ads/banner.jpg" }), true);
+  assert.equal(shouldAutoAnalyzeImageCandidate({ width: 1200, height: 800, url: "https://cdn.site.test/photo.jpg", linkRel: "sponsored" }), true);
+  assert.equal(shouldAutoAnalyzeImageCandidate({ width: 1200, height: 800, url: "https://cdn.site.test/photo.jpg", hasCloseAdButton: true }), true);
+  assert.equal(shouldAutoAnalyzeImageCandidate({ width: 300, height: 250, url: "https://doubleclick.net/banner.jpg" }), true);
 });
 
 test("obvious UI and branding images are skipped", () => {

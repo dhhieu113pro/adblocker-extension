@@ -20,19 +20,19 @@ function compareVersions(left, right) {
   return 0;
 }
 
-test("release metadata targets v1.0.12", () => {
+test("release metadata targets v1.0.13", () => {
   const packageJson = readJson("../package.json");
   const manifest = readJson("../src/manifest.json");
 
-  assert.equal(packageJson.version, "1.0.12");
-  assert.equal(manifest.version, "1.0.12");
+  assert.equal(packageJson.version, "1.0.13");
+  assert.equal(manifest.version, "1.0.13");
 });
 
-test("lockfile metadata targets v1.0.12", () => {
+test("lockfile metadata targets v1.0.13", () => {
   const packageLock = readJson("../package-lock.json");
 
-  assert.equal(packageLock.version, "1.0.12");
-  assert.equal(packageLock.packages[""].version, "1.0.12");
+  assert.equal(packageLock.version, "1.0.13");
+  assert.equal(packageLock.packages[""].version, "1.0.13");
 });
 
 test("release version stays above the published Edge Store baseline", () => {

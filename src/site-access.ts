@@ -1,8 +1,9 @@
 export const FULL_SITE_ORIGINS = ["http://*/*", "https://*/*"];
 export const CONTENT_SCRIPT_ID = "ai-vision-content";
 export const MAIN_WORLD_SCRIPT_ID = "ai-vision-main";
+export const REPORT_BRIDGE_SCRIPT_ID = "ai-vision-report-bridge";
 
-const SCRIPT_IDS = [CONTENT_SCRIPT_ID, MAIN_WORLD_SCRIPT_ID];
+const SCRIPT_IDS = [CONTENT_SCRIPT_ID, MAIN_WORLD_SCRIPT_ID, REPORT_BRIDGE_SCRIPT_ID];
 
 export async function hasFullSiteAccess() {
   return chrome.permissions.contains({ origins: [...FULL_SITE_ORIGINS] });
@@ -32,8 +33,17 @@ export async function registerFullProtectionScripts() {
       persistAcrossSessions: true,
     },
     {
+      id: REPORT_BRIDGE_SCRIPT_ID,
+      js: ["runtime/report-bridge.js"],
+      matches: [...FULL_SITE_ORIGINS],
+      runAt: "document_start",
+      allFrames: true,
+      world: "ISOLATED",
+      persistAcrossSessions: true,
+    },
+    {
       id: CONTENT_SCRIPT_ID,
-      js: ["runtime/report-bridge.js", "runtime/content.js"],
+      js: ["runtime/content.js"],
       matches: [...FULL_SITE_ORIGINS],
       runAt: "document_idle",
       allFrames: true,

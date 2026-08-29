@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Protection Report · AI Vision Ad Blocker</title>
+  <link rel="stylesheet" href="./report.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">AI Vision Ad Blocker</p>
+        <h1>Protection Report</h1>
+        <p class="subtitle">See what was blocked, where it came from, and how your protection is working.</p>
+      </div>
+      <div class="privacy-pill" title="Report statistics are stored with chrome.storage.local and are never sent as analytics.">
+        <span aria-hidden="true">🔒</span>
+        <span><strong>Stays on this device</strong><small>Local-only analytics</small></span>
+      </div>
+    </header>
+
+    <section class="toolbar" aria-label="Report controls">
+      <div class="range-group" role="group" aria-label="Time range">
+        <button type="button" data-range="today">Today</button>
+        <button type="button" data-range="7d">7 days</button>
+        <button type="button" class="active" data-range="30d">30 days</button>
+        <button type="button" data-range="all">All time</button>
+      </div>
+      <div class="action-group">
+        <button type="button" id="export-csv">Export CSV</button>
+        <button type="button" id="export-json">Export JSON</button>
+        <button type="button" id="clear-report" class="danger">Clear Statistics</button>
+      </div>
+    </section>
+
+    <p id="status" class="status" role="status" aria-live="polite"></p>
+
+    <section class="kpi-grid" aria-label="Protection totals">
+      <article class="kpi-card"><span>Ads blocked</span><strong id="kpi-ads">0</strong></article>
+      <article class="kpi-card"><span>Trackers blocked</span><strong id="kpi-trackers">0</strong></article>
+      <article class="kpi-card"><span>Popups blocked</span><strong id="kpi-popups">0</strong></article>
+      <article class="kpi-card"><span>Websites protected</span><strong id="kpi-sites">0</strong></article>
+      <article class="kpi-card"><span>AI-detected</span><strong id="kpi-ai">0</strong></article>
+    </section>
+
+    <section class="panel wide" aria-labelledby="trend-heading">
+      <div class="panel-heading"><div><p class="eyebrow">Activity</p><h2 id="trend-heading">Blocking trend</h2></div></div>
+      <div id="trend" class="trend-list"></div>
+    </section>
+
+    <div class="dashboard-grid">
+      <section class="panel" aria-labelledby="websites-heading"><div class="panel-heading"><h2 id="websites-heading">Top websites</h2></div><div id="websites" class="rank-list"></div></section>
+      <section class="panel" aria-labelledby="categories-heading"><div class="panel-heading"><h2 id="categories-heading">Website categories</h2></div><div id="categories" class="rank-list"></div></section>
+      <section class="panel" aria-labelledby="sources-heading"><div class="panel-heading"><h2 id="sources-heading">Blocked sources</h2></div><div id="sources" class="rank-list"></div></section>
+      <section class="panel" aria-labelledby="methods-heading"><div class="panel-heading"><h2 id="methods-heading">Detection methods</h2></div><div id="methods" class="rank-list"></div></section>
+      <section class="panel" aria-labelledby="resources-heading"><div class="panel-heading"><h2 id="resources-heading">Content types</h2></div><div id="resources" class="rank-list"></div></section>
+    </div>
+
+    <section class="panel wide" aria-labelledby="recent-heading">
+      <div class="panel-heading recent-heading">
+        <div><p class="eyebrow">Last 30 days</p><h2 id="recent-heading">Recent protection activity</h2></div>
+        <label class="search"><span class="sr-only">Search recent activity</span><input id="recent-search" type="search" placeholder="Search site, source, type…"></label>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>When</th><th>Website</th><th>Category</th><th>Blocked source</th><th>Type</th><th>Method</th><th>Action</th></tr></thead>
+          <tbody id="recent"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer>Detailed events are kept for 30 days. Compact aggregate statistics remain locally until you clear them.</footer>
+  </main>
+  <script type="module" src="./report.ts"></script>
+</body>
+</html>

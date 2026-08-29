@@ -56,6 +56,14 @@ import { isAutomaticProtectionEnabled } from "./protection-state.mjs";
     return isStreaming && isAdUrl(targetUrl, true);
   };
 
+  const reportPopupBlocked = (targetUrl: unknown) => {
+    const url = typeof targetUrl === "string" ? targetUrl : String(targetUrl || "");
+    if (!url) return;
+    window.dispatchEvent(new CustomEvent("aiVisionPopupBlocked", {
+      detail: { url },
+    }));
+  };
+
   // Hook window.open and return Proxy to catch blank window locations
   const originalOpen = window.open;
   const handleFullProtectionState = (event: any) => {
@@ -78,6 +86,7 @@ import { isAutomaticProtectionEnabled } from "./protection-state.mjs";
     const urlStr = url ? url.toString() : "";
     if (urlStr && shouldBlockRedirect(urlStr)) {
       console.warn("[AdBlocker] Hook blocked window.open popup redirect to:", urlStr);
+      reportPopupBlocked(urlStr);
       return null;
     }
 
@@ -93,6 +102,7 @@ import { isAutomaticProtectionEnabled } from "./protection-state.mjs";
               set(locTarget, locProp, val) {
                 if (val && shouldBlockRedirect(val)) {
                   console.warn("[AdBlocker] Blocked location write on opened window to:", val);
+                  reportPopupBlocked(val);
                   return true;
                 }
                 (locTarget as any)[locProp] = val;
@@ -109,6 +119,7 @@ import { isAutomaticProtectionEnabled } from "./protection-state.mjs";
         set(targetObj, prop, val) {
           if (prop === "location" && val && shouldBlockRedirect(val)) {
             console.warn("[AdBlocker] Blocked location assignment on opened window to:", val);
+            reportPopupBlocked(val);
             return true;
           }
           (targetObj as any)[prop] = val;
@@ -194,6 +205,7 @@ import { isAutomaticProtectionEnabled } from "./protection-state.mjs";
       // Block standard ad URLs on all sites (heuristics only on streaming/ad-prone sites)
       if (isStreaming && isAdUrl(href, true)) {
         console.warn("[AdBlocker] Hook blocked click redirection to:", href);
+        reportPopupBlocked(href);
         e.preventDefault();
         e.stopPropagation();
         return false;
@@ -205,6 +217,7 @@ import { isAutomaticProtectionEnabled } from "./protection-state.mjs";
 
       if (!e.isTrusted && shouldBlockUntrusted) {
         console.warn("[AdBlocker] Hook blocked untrusted programmatic click redirection to:", href);
+        reportPopupBlocked(href);
         e.preventDefault();
         e.stopPropagation();
         return false;

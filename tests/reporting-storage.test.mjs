@@ -83,6 +83,21 @@ test("recording prunes detailed events older than 30 days", async () => {
   assert.equal(storage.data[REPORT_EVENTS_KEY][0].pageDomain, "new.example");
 });
 
+test("reading physically removes detailed events older than 30 days", async () => {
+  const day = 86_400_000;
+  const now = 40 * day;
+  const recent = { timestamp: now - day, pageDomain: "recent.example" };
+  const storage = createStorage({
+    [REPORT_EVENTS_KEY]: [{ timestamp: 1, pageDomain: "expired.example" }, recent],
+    [REPORT_DAILY_KEY]: {},
+  });
+  const store = createReportStore(storage);
+
+  const report = await store.read("all", now);
+  assert.deepEqual(report.events, [recent]);
+  assert.deepEqual(storage.data[REPORT_EVENTS_KEY], [recent]);
+});
+
 test("reads filtered data and exports CSV or JSON", async () => {
   const now = Date.UTC(2026, 7, 29, 12);
   const storage = createStorage();

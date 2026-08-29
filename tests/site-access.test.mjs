@@ -78,7 +78,7 @@ test("granted full-site access registers MAIN, report bridge, and content protec
   const content = fake._registrations.get("ai-vision-content");
   assert.deepEqual(content.js, ["runtime/content.js"]);
   assert.deepEqual(content.matches, ["http://*/*", "https://*/*"]);
-  assert.equal(content.runAt, "document_idle");
+  assert.equal(content.runAt, "document_start");
   assert.equal(content.allFrames, true);
   assert.equal(content.world, "ISOLATED");
   assert.equal(content.persistAcrossSessions, true);

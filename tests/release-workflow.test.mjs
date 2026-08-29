@@ -3,13 +3,14 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 
 const read = (path) => readFileSync(path, "utf8");
+const countExactBuildSteps = (workflow) => (workflow.match(/^\s*run:\s*npm run build\s*$/gm) ?? []).length;
 
 test("unified release builds once and publishes the same artifact to GitHub and Edge", () => {
   const release = read(".github/workflows/release.yml");
   const edge = read(".github/workflows/edge-store.yml");
 
-  assert.equal((release.match(/npm run build/g) ?? []).length, 1);
-  assert.equal((edge.match(/npm run build/g) ?? []).length, 0);
+  assert.equal(countExactBuildSteps(release), 1);
+  assert.equal(countExactBuildSteps(edge), 0);
 
   assert.match(release, /uses: \.\/\.github\/workflows\/edge-store\.yml/);
   assert.match(release, /actions\/upload-artifact@v4/);

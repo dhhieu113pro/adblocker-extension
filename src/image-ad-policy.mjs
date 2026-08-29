@@ -59,6 +59,6 @@ export function buildImageDetectionRequest({
   };
 }
 
-export function shouldBlockDetectionResult(result, minimumConfidence = 50) {
+export function shouldBlockDetectionResult(result, minimumConfidence = 80) {
   return Boolean(result?.isAd) && Number(result?.confidence || 0) >= minimumConfidence;
 }

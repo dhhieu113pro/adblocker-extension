@@ -29,6 +29,7 @@ class AdBlockerOverlay {
     this.injectGlobalStyles();
     await this.loadSettings();
     this.setupMutationObserver();
+    this.setupNavigationTracking();
     this.initMessageListener();
     this.setupContextMenuTracker();
     this.setupJwAdSkipAutomation();
@@ -78,7 +79,7 @@ class AdBlockerOverlay {
         const disabled = (changes.disabledSites.newValue || []).includes(window.location.hostname.toLowerCase());
         this.siteDisabled = disabled;
         if (disabled) this.disableSiteBlocking();
-        else { this.processedImages = new WeakSet(); this.scheduleScan(); }
+        else { this.processedImages = new WeakSet(); this.processedImageUrls = new WeakMap(); this.scheduleScan(); }
       }
       if (area === "sync" && changes.allowedAds) this.allowedAds = new Set(changes.allowedAds.newValue || []);
     });
@@ -226,6 +227,23 @@ class AdBlockerOverlay {
     if (!this.autoHideAds || this.siteDisabled) return;
     this.scanImages();
     this.scanVideos();
+  }
+
+  setupNavigationTracking() {
+    const originalPushState = history.pushState.bind(history);
+    history.pushState = (...args) => {
+      const result = originalPushState(...args);
+      queueMicrotask(() => this.handlePageNavigation());
+      return result;
+    };
+    const originalReplaceState = history.replaceState.bind(history);
+    history.replaceState = (...args) => {
+      const result = originalReplaceState(...args);
+      queueMicrotask(() => this.handlePageNavigation());
+      return result;
+    };
+    window.addEventListener("popstate", () => queueMicrotask(() => this.handlePageNavigation()));
+    window.addEventListener("hashchange", () => queueMicrotask(() => this.handlePageNavigation()));
   }
 
   setupMutationObserver() {
@@ -468,10 +486,10 @@ class AdBlockerOverlay {
 
   async processAdCheck({ img, msg }) {
     const generation = this.protectionGeneration;
-    if (!img?.isConnected) return;
+    if (!img?.isConnected || this.getImageSource(img) !== msg.imageUrl) return;
 
     const preflight = await this.requestAdDecision({ ...msg, preflightOnly: true });
-    if (generation !== this.protectionGeneration || !this.autoHideAds || this.siteDisabled || !img?.isConnected) return;
+    if (generation !== this.protectionGeneration || !this.autoHideAds || this.siteDisabled || !img?.isConnected || this.getImageSource(img) !== msg.imageUrl) return;
     if (shouldBlockDetectionResult(preflight)) {
       this.hideAd(img, preflight);
       this.cleanupEmptyAdContainers();
@@ -483,7 +501,7 @@ class AdBlockerOverlay {
     if (!imageDataUrl || generation !== this.protectionGeneration || !this.autoHideAds || this.siteDisabled || !img?.isConnected) return;
 
     const result = await this.requestAdDecision({ ...msg, imageDataUrl });
-    if (generation === this.protectionGeneration && this.autoHideAds && !this.siteDisabled && shouldBlockDetectionResult(result) && img?.isConnected) {
+    if (generation === this.protectionGeneration && this.autoHideAds && !this.siteDisabled && shouldBlockDetectionResult(result) && img?.isConnected && this.getImageSource(img) === msg.imageUrl) {
       this.hideAd(img, result);
       this.cleanupEmptyAdContainers();
     }

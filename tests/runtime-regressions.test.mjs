@@ -89,3 +89,17 @@ test("content protection starts at document_start to minimize ad flash", () => {
   const contentRegistration = source.slice(source.indexOf(`id: CONTENT_SCRIPT_ID`));
   assert.match(contentRegistration, /runAt:\s*"document_start"/);
 });
+
+test("popup uses slim themed scrollbars for the page and inner lists", () => {
+  const html = readFileSync(new URL("../src/popup.html", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../src/popup-scrollbar.css", import.meta.url), "utf8");
+  assert.match(html, /href="popup-scrollbar\.css"/);
+  assert.match(css, /body,\s*\.list\s*\{[^}]*scrollbar-width:\s*thin;/s);
+  assert.match(css, /body,\s*\.list\s*\{[^}]*scrollbar-color:\s*var\(--color-accent\)\s+transparent;/s);
+  assert.match(css, /body::-webkit-scrollbar,\s*\.list::-webkit-scrollbar\s*\{[^}]*width:\s*8px;/s);
+  assert.match(css, /body::-webkit-scrollbar-track,\s*\.list::-webkit-scrollbar-track\s*\{[^}]*background:\s*transparent;/s);
+  assert.match(css, /body::-webkit-scrollbar-thumb,\s*\.list::-webkit-scrollbar-thumb\s*\{[^}]*border-radius:\s*999px;/s);
+  assert.match(css, /body::-webkit-scrollbar-thumb,\s*\.list::-webkit-scrollbar-thumb\s*\{[^}]*background:\s*var\(--color-accent\);/s);
+  assert.match(css, /body::-webkit-scrollbar-button,\s*\.list::-webkit-scrollbar-button\s*\{[^}]*display:\s*none;/s);
+  assert.match(css, /\.list\s*\{[^}]*scrollbar-gutter:\s*stable;/s);
+});

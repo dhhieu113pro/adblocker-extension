@@ -107,6 +107,21 @@ test.afterAll(async () => {
   if (server) await new Promise((resolve) => server.close(resolve));
 });
 
+test('fresh install automatically protects pages without a permission-grant click', async () => {
+  const popup = await openPopup();
+  await popup.evaluate(() => chrome.storage.sync.set({ autoHideAds: true, disabledSites: [] }));
+  await popup.reload();
+
+  await expect.poll(async () => popup.evaluate(async (origins) => chrome.permissions.contains({ origins }), FULL_SITE_ORIGINS)).toBe(true);
+
+  const page = await context.newPage();
+  await page.goto(baseUrl);
+  await expect.poll(async () => readHiddenState(page)).toEqual({ hidden: 'true', display: 'none' });
+
+  await page.close();
+  await popup.close();
+});
+
 test('global protection off immediately restores the page and removes all DNR blocking rules', async () => {
   const popup = await openPopup();
   await popup.evaluate(() => chrome.storage.sync.set({ autoHideAds: true, disabledSites: [] }));

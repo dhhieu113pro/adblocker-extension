@@ -37,6 +37,9 @@ The extension blocks advertisements using a **hybrid engine** combining fast heu
 *   **Hybrid Ad Detection Engine**:
     *   **Tier 1: Heuristics** (Instant evaluation based on IAB standard sizes, banner aspect ratios, and domain/URL rules).
     *   **Tier 2: local CLIP AI Vision** (OpenAI's Vision Transformer `CLIP-ViT-B/16` runs zero-shot classification in an offscreen WASM worker when heuristics are ambiguous).
+*   **Local Protection Reports**: Open **Reports** from the popup to review Today, 7-day, 30-day, or All-time blocking statistics. The dashboard shows ads, trackers, popups, protected websites, AI-detected blocks, website categories, blocked sources, detection methods, content types, trends, and recent activity.
+*   **Privacy-Minimized Analytics**: Report data stays in `chrome.storage.local`. Detailed events keep normalized domains and protection metadata for 30 days; compact daily aggregates remain locally until **Clear Statistics**. CSV/JSON export is explicit and user-initiated.
+*   **Blocked Popup Investigation**: Recent popup events can open the normalized blocked destination domain without retaining the original path, query string, or fragment in Report storage.
 *   **Request-Level Blocking (declarativeNetRequest)**: Known ad domains are blocked at the network layer, not just hidden in the DOM—saves bandwidth and catches `window.open` popups before they fire.
 *   **On-Demand AI Detection (Context Menu)**: Right-click any image on the web and select **"✨ Analyze with AI & Detect Ad"** to review the classification reasons and confidence scores.
 *   **CLIP Result Cache**: AI classification results are cached per image URL (7-day TTL, LRU), so repeat scans cost nothing.
@@ -173,6 +176,12 @@ To publish a rule update, edit `rules/ad-rules.json`, commit it, and push it to 
 *   Once loaded, the extension actively monitors the active tab.
 *   Standard ad banners, promotional skyscrapers, and ad iframes will be blocked and hidden automatically.
 *   Dynamically injected banners and CSS-based takeover ads are rescanned when their containers, classes, or lazy-loaded URLs change.
+
+### Protection Report
+
+Open the extension popup and choose **Reports**. The Report page provides Today, 7 days, 30 days, and All time filters with local statistics for blocked ads, trackers, popups, websites, categories, sources, detection methods, and resource types. Recent detailed activity is searchable, popup destinations can be opened by normalized domain, and the current view can be exported as CSV or JSON.
+
+Report analytics stay on the device. Detailed Report events expire after 30 days; long-term aggregate counters remain until **Clear Statistics**. Clearing Report statistics does not disable protection or change your rules/settings.
 
 ### Vision model selection
 

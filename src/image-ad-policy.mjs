@@ -43,6 +43,7 @@ export function shouldAutoAnalyzeImageCandidate({
   url = "",
   alt = "",
   parentClasses = "",
+  linkUrl = "",
   linkRel = "",
   hasCloseAdButton = false,
 } = {}) {
@@ -62,10 +63,17 @@ export function shouldAutoAnalyzeImageCandidate({
   const normalizedUrl = String(url).toLowerCase();
   if (AD_URL_MARKERS.some((marker) => normalizedUrl.includes(marker))) return true;
 
+  const normalizedLinkUrl = String(linkUrl).toLowerCase();
+  if (AD_URL_MARKERS.some((marker) => normalizedLinkUrl.includes(marker))) return true;
+
   const normalizedRel = String(linkRel).toLowerCase();
   if (normalizedRel.includes("sponsored") || normalizedRel.includes("nofollow")) return true;
 
   return Boolean(hasCloseAdButton);
+}
+
+export function buildImageFingerprint({ imageUrl = "", linkUrl = "", width = 0, height = 0 } = {}) {
+  return `${String(imageUrl)}|${String(linkUrl)}|${Number(width)}x${Number(height)}`;
 }
 
 export function hasExplicitAdCloseSignal({ text = "", ariaLabel = "", className = "" } = {}) {

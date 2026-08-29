@@ -12,7 +12,8 @@ class AdBlockerOverlay {
     this.allowedAds = new Set();
     this.lastRightClickedElement = null;
     this.adCheckQueue = [];
-    this.adCheckProcessing = false;
+    this.adCheckWorkers = 0;
+    this.maxConcurrentAdChecks = 3;
     this.adCheckUrls = new Set();
     this.protectionGeneration = 0;
     this.scanTimer = null;
@@ -25,13 +26,17 @@ class AdBlockerOverlay {
   async init() {
     this.injectGlobalStyles();
     await this.loadSettings();
-    await loadRemoteAdRules();
-    this.scanImages();
-    this.scanVideos();
     this.setupMutationObserver();
     this.initMessageListener();
     this.setupContextMenuTracker();
     this.setupJwAdSkipAutomation();
+    this.scanImages();
+    this.scanVideos();
+    loadRemoteAdRules().then(() => {
+      if (!this.autoHideAds || this.siteDisabled) return;
+      this.processedImages = new WeakSet();
+      this.scheduleScan();
+    });
     setInterval(() => this.scanClickjackingOverlays(), 1000);
   }
 
@@ -397,7 +402,7 @@ class AdBlockerOverlay {
     if (!msg.imageUrl || this.allowedAds.has(msg.imageUrl) || this.adCheckUrls.has(msg.imageUrl)) return;
     this.adCheckUrls.add(msg.imageUrl);
     this.adCheckQueue.push({ img, msg });
-    if (!this.adCheckProcessing) this.processAdCheckQueue();
+    this.processAdCheckQueue();
   }
 
   async fetchImageDataUrl(imageUrl) {
@@ -407,24 +412,45 @@ class AdBlockerOverlay {
     } catch (err) { console.warn("[AdBlocker] Failed to fetch image for AI classification:", err); return ""; }
   }
 
-  async processAdCheckQueue() {
-    if (this.adCheckProcessing) return;
-    this.adCheckProcessing = true;
-    while (this.adCheckQueue.length > 0) {
-      const { img, msg } = this.adCheckQueue.shift();
-      const generation = this.protectionGeneration;
-      if (!img?.isConnected) continue;
-      const imageDataUrl = await this.fetchImageDataUrl(msg.imageUrl);
-      await new Promise((resolve) => {
-        chrome.runtime.sendMessage({ type: "detectAd", ...msg, imageDataUrl }, (res) => {
-          if (generation === this.protectionGeneration && this.autoHideAds && !this.siteDisabled && shouldBlockDetectionResult(res) && img?.isConnected) { this.hideAd(img, res); this.cleanupEmptyAdContainers(); }
-          resolve();
-        });
+  requestAdDecision(payload) {
+    return new Promise((resolve) => {
+      chrome.runtime.sendMessage({ type: "detectAd", ...payload }, (res) => resolve(res));
+    });
+  }
+
+  processAdCheckQueue() {
+    while (this.adCheckWorkers < this.maxConcurrentAdChecks && this.adCheckQueue.length > 0) {
+      const item = this.adCheckQueue.shift();
+      this.adCheckWorkers += 1;
+      this.processAdCheck(item).finally(() => {
+        this.adCheckWorkers -= 1;
+        this.adCheckUrls.delete(item.msg.imageUrl);
+        this.processAdCheckQueue();
       });
-      await new Promise((r) => setTimeout(r, 200));
     }
-    this.adCheckProcessing = false;
-    this.adCheckUrls.clear();
+  }
+
+  async processAdCheck({ img, msg }) {
+    const generation = this.protectionGeneration;
+    if (!img?.isConnected) return;
+
+    const preflight = await this.requestAdDecision({ ...msg, preflightOnly: true });
+    if (generation !== this.protectionGeneration || !this.autoHideAds || this.siteDisabled || !img?.isConnected) return;
+    if (shouldBlockDetectionResult(preflight)) {
+      this.hideAd(img, preflight);
+      this.cleanupEmptyAdContainers();
+      return;
+    }
+    if (!preflight?.needsImageData) return;
+
+    const imageDataUrl = await this.fetchImageDataUrl(msg.imageUrl);
+    if (!imageDataUrl || generation !== this.protectionGeneration || !this.autoHideAds || this.siteDisabled || !img?.isConnected) return;
+
+    const result = await this.requestAdDecision({ ...msg, imageDataUrl });
+    if (generation === this.protectionGeneration && this.autoHideAds && !this.siteDisabled && shouldBlockDetectionResult(result) && img?.isConnected) {
+      this.hideAd(img, result);
+      this.cleanupEmptyAdContainers();
+    }
   }
 
   getAdTargetContainer(img) {

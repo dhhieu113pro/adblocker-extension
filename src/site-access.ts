@@ -45,7 +45,7 @@ export async function registerFullProtectionScripts() {
       id: CONTENT_SCRIPT_ID,
       js: ["runtime/content.js"],
       matches: [...FULL_SITE_ORIGINS],
-      runAt: "document_idle",
+      runAt: "document_start",
       allFrames: true,
       world: "ISOLATED",
       persistAcrossSessions: true,

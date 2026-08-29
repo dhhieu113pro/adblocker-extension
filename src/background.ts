@@ -373,24 +373,36 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           return;
         }
 
-        if (message.imageDataUrl) {
-                  // #3 - Serve from cache before touching the ~350MB CLIP model
-                  const cached = selectedModel === "clip" ? getCachedClip(message.imageUrl) : undefined;
-                  if (cached) {
-                    sendResponse({
-                      success: true,
-                      isAd: cached.isAd,
-                      confidence: cached.aiConfidence,
-                      method: "CLIP Cache",
-                      reasons: [
-                        `AI Classification (cached): "${cached.label}" (${cached.aiConfidence}%)`,
-                        ...heuristics.reasons,
-                      ],
-                    });
-                    return;
-                  }
+        // Serve persisted CLIP decisions before the content script downloads pixels.
+        const cached = selectedModel === "clip" ? getCachedClip(message.imageUrl) : undefined;
+        if (cached && !message.forceAI) {
+          sendResponse({
+            success: true,
+            isAd: cached.isAd,
+            confidence: cached.aiConfidence,
+            method: "CLIP Cache",
+            reasons: [
+              `AI Classification (cached): "${cached.label}" (${cached.aiConfidence}%)`,
+              ...heuristics.reasons,
+            ],
+          });
+          return;
+        }
 
-                  await ensureOffscreenDocument();
+        if (message.preflightOnly && !message.forceAI) {
+          sendResponse({
+            success: true,
+            isAd: heuristics.isAd,
+            confidence: heuristics.confidence,
+            method: "Heuristic preflight",
+            reasons: heuristics.reasons.length > 0 ? heuristics.reasons : ["Needs visual classification"],
+            needsImageData: true,
+          });
+          return;
+        }
+
+        if (message.imageDataUrl) {
+          await ensureOffscreenDocument();
                   const aiResult = await classifyAdWithCache({ ...message, model: selectedModel }, heuristics);
 
                   if (aiResult?.results && Array.isArray(aiResult.results)) {

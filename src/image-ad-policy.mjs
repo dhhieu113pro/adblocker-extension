@@ -1,3 +1,7 @@
+const AD_URL_MARKERS = [
+  "/ads/", "/ad/", "advert", "banner", "sponsor", "promo", "quangcao", "quang-cao", "doubleclick", "googlesyndication", "adservice", "adnxs", "taboola", "outbrain",
+];
+
 export function shouldAnalyzeImage({ width = 0, height = 0, url = "", alt = "", parentClasses = "" } = {}) {
   const normalizedUrl = String(url).toLowerCase();
   const normalizedAlt = String(alt).toLowerCase();
@@ -16,6 +20,24 @@ export function shouldAnalyzeImage({ width = 0, height = 0, url = "", alt = "", 
   }
 
   return true;
+}
+
+export function shouldAutoAnalyzeImageCandidate({
+  width = 0,
+  height = 0,
+  url = "",
+  alt = "",
+  parentClasses = "",
+  linkRel = "",
+  hasCloseAdButton = false,
+} = {}) {
+  if (!shouldAnalyzeImage({ width, height, url, alt, parentClasses })) return false;
+
+  const normalizedUrl = String(url).toLowerCase();
+  const normalizedRel = String(linkRel).toLowerCase();
+
+  if (hasCloseAdButton || normalizedRel.includes("sponsored")) return true;
+  return AD_URL_MARKERS.some((marker) => normalizedUrl.includes(marker));
 }
 
 export function hasExplicitAdCloseSignal({ text = "", ariaLabel = "", className = "" } = {}) {
@@ -59,6 +81,6 @@ export function buildImageDetectionRequest({
   };
 }
 
-export function shouldBlockDetectionResult(result, minimumConfidence = 50) {
+export function shouldBlockDetectionResult(result, minimumConfidence = 80) {
   return Boolean(result?.isAd) && Number(result?.confidence || 0) >= minimumConfidence;
 }

@@ -61,13 +61,14 @@ test('disabling protection invalidates in-flight automatic ad checks', () => {
   const content = read('src/content.js');
   const constructor = section(content, '  constructor() {', '  async init() {');
   const disable = section(content, '  disableSiteBlocking() {', '  scheduleScan() {');
-  const queue = section(content, '  async processAdCheckQueue() {', '  getAdTargetContainer(img) {');
+  const check = section(content, '  async processAdCheck({ img, msg }) {', '  getAdTargetContainer(img) {');
 
   assert.match(constructor, /this\.protectionGeneration = 0;/);
   assert.match(disable, /this\.protectionGeneration \+= 1;/);
-  assert.match(queue, /const generation = this\.protectionGeneration;/);
-  assert.match(queue, /generation === this\.protectionGeneration/);
-  assert.match(queue, /this\.autoHideAds && !this\.siteDisabled/);
+  assert.match(check, /const generation = this\.protectionGeneration;/);
+  assert.match(check, /generation (?:===|!==) this\.protectionGeneration/);
+  assert.match(check, /this\.autoHideAds/);
+  assert.match(check, /this\.siteDisabled/);
 });
 
 test('disabling protection restores JW Player audio immediately', () => {

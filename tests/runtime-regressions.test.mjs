@@ -55,7 +55,7 @@ test("content script uses the restored v1.0.11 image candidate policy", () => {
   const source = readFileSync(new URL("../src/content.js", import.meta.url), "utf8");
   assert.match(source, /shouldAutoAnalyzeImageCandidate/);
   assert.match(source, /imageUrl: imgSrc, width, height, linkUrl, linkRel, hasCloseAdButton/);
-  assert.match(source, /shouldBlockDetectionResult\(res\)/);
+  assert.match(source, /shouldBlockDetectionResult\((?:preflight|result|res)\)/);
 });
 
 test("CLIP is the default vision model as in v1.0.11", () => {

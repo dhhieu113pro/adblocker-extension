@@ -98,11 +98,18 @@ test('keeps browser action width fixed when the initial viewport is narrow', asy
 
 test('fresh install starts with full protection automatically enabled', async () => {
   const popup = await openPopup();
+  const site = await context.newPage();
+  await site.goto(baseUrl);
+  await site.bringToFront();
+  await popup.reload();
 
   await expect.poll(async () => popup.evaluate(async (origins) => chrome.permissions.contains({ origins }), FULL_SITE_ORIGINS)).toBe(true);
   await expect(popup.locator('#status-label')).toHaveText('Protection is on');
   await expect(popup.getByRole('button', { name: 'Enable full protection' })).toBeHidden();
   await expect(popup.locator('#site-block-toggle')).toBeEnabled();
+
+  await site.close();
+  await popup.close();
 });
 
 test('opens Overview by default and captures every popup tab', async () => {
@@ -258,6 +265,8 @@ test('required full-site access registers the protection scripts automatically',
     display: getComputedStyle(el).display,
   }))).toEqual({ hidden: 'true', display: 'none' });
 
+  await protectedPage.bringToFront();
+  await popup.reload();
   await expect(popup.getByRole('button', { name: 'Enable full protection' })).toBeHidden();
   await expect(popup.locator('#status-label')).toHaveText('Protection is on');
 

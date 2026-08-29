@@ -48,7 +48,7 @@ test("denied full-site access stays in baseline mode", async () => {
   assert.equal(fake._registrations.size, 0);
 });
 
-test("granted full-site access registers MAIN and ISOLATED protection scripts", async () => {
+test("granted full-site access registers MAIN, report bridge, and content protection scripts", async () => {
   const fake = createChromeFake({ granted: true });
   const siteAccess = await loadSiteAccess(fake);
 
@@ -56,7 +56,7 @@ test("granted full-site access registers MAIN and ISOLATED protection scripts", 
   assert.equal(await siteAccess.syncFullProtectionRegistration(), true);
   assert.deepEqual(
     Array.from(fake._registrations.keys()).sort(),
-    ["ai-vision-content", "ai-vision-main"],
+    ["ai-vision-content", "ai-vision-main", "ai-vision-report-bridge"],
   );
 
   const main = fake._registrations.get("ai-vision-main");
@@ -66,6 +66,14 @@ test("granted full-site access registers MAIN and ISOLATED protection scripts", 
   assert.equal(main.allFrames, true);
   assert.equal(main.world, "MAIN");
   assert.equal(main.persistAcrossSessions, true);
+
+  const reportBridge = fake._registrations.get("ai-vision-report-bridge");
+  assert.deepEqual(reportBridge.js, ["runtime/report-bridge.js"]);
+  assert.deepEqual(reportBridge.matches, ["http://*/*", "https://*/*"]);
+  assert.equal(reportBridge.runAt, "document_start");
+  assert.equal(reportBridge.allFrames, true);
+  assert.equal(reportBridge.world, "ISOLATED");
+  assert.equal(reportBridge.persistAcrossSessions, true);
 
   const content = fake._registrations.get("ai-vision-content");
   assert.deepEqual(content.js, ["runtime/content.js"]);
@@ -82,12 +90,13 @@ test("registration synchronization is idempotent", async () => {
 
   assert.equal(await siteAccess.syncFullProtectionRegistration(), true);
   assert.equal(await siteAccess.syncFullProtectionRegistration(), true);
-  assert.equal(fake._registrations.size, 2);
+  assert.equal(fake._registrations.size, 3);
 });
 
 test("revoked permission unregisters stale protection scripts", async () => {
   const stale = [
     { id: "ai-vision-main", js: ["old-main.js"] },
+    { id: "ai-vision-report-bridge", js: ["old-report-bridge.js"] },
     { id: "ai-vision-content", js: ["old-content.js"] },
   ];
   const fake = createChromeFake({ granted: false, initialRegistrations: stale });

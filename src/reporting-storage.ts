@@ -63,14 +63,19 @@ export function createReportStore(storage = chrome.storage.local) {
     });
   }
 
-  async function read(range = "30d", now = Date.now()) {
-    await writeChain;
-    const current = await load([REPORT_EVENTS_KEY, REPORT_DAILY_KEY]);
-    const events = pruneEvents(current[REPORT_EVENTS_KEY] || [], now);
-    return filterReportData({
-      events,
-      daily: current[REPORT_DAILY_KEY] || {},
-    }, range, now);
+  function read(range = "30d", now = Date.now()) {
+    return enqueueWrite(async () => {
+      const current = await load([REPORT_EVENTS_KEY, REPORT_DAILY_KEY]);
+      const storedEvents = Array.isArray(current[REPORT_EVENTS_KEY]) ? current[REPORT_EVENTS_KEY] : [];
+      const events = pruneEvents(storedEvents, now);
+      if (events.length !== storedEvents.length) {
+        await storage.set({ [REPORT_EVENTS_KEY]: events });
+      }
+      return filterReportData({
+        events,
+        daily: current[REPORT_DAILY_KEY] || {},
+      }, range, now);
+    });
   }
 
   async function exportData(format = "json", range = "all", now = Date.now()) {

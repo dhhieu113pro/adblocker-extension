@@ -17,3 +17,16 @@ test("SPA navigation clears page-scoped detections and triggers an immediate res
   assert.match(source, /if\s*\(window\.location\.href\s*!==\s*this\.currentPageUrl\)/);
   assert.match(source, /this\.scanImages\(\)/);
 });
+
+test("SPA history navigation triggers detection even before DOM mutation", () => {
+  assert.match(source, /setupNavigationTracking\(\)/);
+  assert.match(source, /history\.pushState/);
+  assert.match(source, /history\.replaceState/);
+  assert.match(source, /addEventListener\("popstate"/);
+  assert.match(source, /queueMicrotask\(\(\)\s*=>\s*this\.handlePageNavigation\(\)\)/);
+});
+
+test("an async decision cannot hide an image after that node changes source", () => {
+  const sourceChecks = source.match(/this\.getImageSource\(img\)\s*!==\s*msg\.imageUrl/g) || [];
+  assert.ok(sourceChecks.length >= 2, "async ad checks should verify the image still has the URL they classified");
+});

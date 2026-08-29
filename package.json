@@ -5,6 +5,8 @@
   "scripts": {
     "dev": "parcel watch src/manifest.json --config @parcel/config-webextension --no-source-maps",
     "build": "parcel build src/manifest.json --config @parcel/config-webextension --no-source-maps && npm run build:offscreen && npm run build:runtime && npm run copy-wasm",
+    "build:edge-android": "node scripts/edge-android.mjs prepare && parcel build src/manifest.edge-android.json --config @parcel/config-webextension --dist-dir dist-edge-android --no-source-maps && parcel build src/offscreen.html --dist-dir dist-edge-android --no-source-maps --no-content-hash && parcel build src/content.js src/inject.ts src/report-bridge.js --dist-dir dist-edge-android/runtime --no-source-maps --no-content-hash && node scripts/copy-wasm.js dist-edge-android",
+    "package:edge-android:crx": "node scripts/edge-android.mjs package",
     "build:offscreen": "parcel build src/offscreen.html --dist-dir dist --no-source-maps --no-content-hash",
     "build:runtime": "parcel build src/content.js src/inject.ts src/report-bridge.js --dist-dir dist/runtime --no-source-maps --no-content-hash",
     "copy-wasm": "node scripts/copy-wasm.js",

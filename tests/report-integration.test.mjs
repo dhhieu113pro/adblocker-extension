@@ -27,3 +27,9 @@ test("popup blocks are bridged from MAIN world to local reporting", () => {
   assert.match(siteAccess, /runtime\/report-bridge\.js/);
   assert.match(packageJson.scripts["build:runtime"], /src\/report-bridge\.js/);
 });
+
+test("enabling full protection immediately injects the report bridge into the active tab", () => {
+  assert.match(reportingBackground, /message\.type === ["']activateFullProtectionOnTab["']/);
+  assert.match(reportingBackground, /files:\s*\[["']runtime\/report-bridge\.js["']\]/);
+  assert.match(reportingBackground, /world:\s*["']ISOLATED["']/);
+});

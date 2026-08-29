@@ -23,14 +23,6 @@ async function waitForExtensionServiceWorker(ctx) {
   return found;
 }
 
-async function reloadExtensionServiceWorker() {
-  const nextWorker = context.waitForEvent('serviceworker', {
-    predicate: (item) => item.url().startsWith('chrome-extension://'),
-    timeout: 5000,
-  });
-  await worker.evaluate(() => chrome.runtime.reload());
-  worker = await nextWorker;
-}
 
 test.beforeAll(async () => {
   const extensionPath = path.resolve('dist');
@@ -112,8 +104,6 @@ test('previously classified ads are hidden from persisted cache without refetchi
       },
     });
   }, { imageUrl });
-  await reloadExtensionServiceWorker();
-
   const page = await context.newPage();
   await page.goto(`${baseUrl}/cached-page`);
 

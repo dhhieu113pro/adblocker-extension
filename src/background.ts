@@ -126,6 +126,13 @@ function setCachedClip(imageUrl: string, entry: { label: string; score: number; 
 
 loadClipCache();
 
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== "local" || !changes[CLIP_CACHE_KEY]) return;
+  const nextValue = changes[CLIP_CACHE_KEY].newValue || {};
+  clipCache = new Map(Object.entries(nextValue));
+  clipCacheLoaded = true;
+});
+
 // Coalesces concurrent classify calls for the same image and writes the cache.
 async function classifyAdWithCache(message: any, heuristics: any) {
   const cacheKey = message.model === "mobilenet" ? "" : message.imageUrl;

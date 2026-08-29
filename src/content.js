@@ -242,8 +242,8 @@ class AdBlockerOverlay {
   }
 
   shouldAnalyzeImage(img) {
-    const width = img.naturalWidth || img.width || 0;
-    const height = img.naturalHeight || img.height || 0;
+    const width = parseInt(img.getAttribute("width") || "0", 10) || img.naturalWidth || img.width || 0;
+    const height = parseInt(img.getAttribute("height") || "0", 10) || img.naturalHeight || img.height || 0;
     const url = img.currentSrc || img.src || "";
     const alt = img.alt || "";
     const parentClasses = img.closest("header, nav, .logo, .logo-brand, #nav")?.className?.toString() || "";
@@ -364,8 +364,8 @@ class AdBlockerOverlay {
         this.processedImages.add(img);
         if (!this.autoHideAds) return;
         const imgSrc = img.currentSrc || img.src;
-        const width = img.naturalWidth || img.width || 0;
-        const height = img.naturalHeight || img.height || 0;
+        const width = parseInt(img.getAttribute("width") || "0", 10) || img.naturalWidth || img.width || 0;
+        const height = parseInt(img.getAttribute("height") || "0", 10) || img.naturalHeight || img.height || 0;
         if (isHardAdNetwork(imgSrc)) {
           let host = "ad network";
           try { host = new URL(imgSrc).hostname; } catch {}

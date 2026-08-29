@@ -1,15 +1,13 @@
-const chromeApi = globalThis.chrome as typeof chrome & { contextMenus?: typeof chrome.contextMenus };
+const chromeApi = chrome as any;
 
 if (!chromeApi.contextMenus) {
-  const noOpEvent = { addListener: () => undefined } as unknown as typeof chrome.contextMenus.onClicked;
   chromeApi.contextMenus = {
-    ACTION_MENU_TOP_LEVEL_LIMIT: 0,
     create: () => undefined,
     remove: async () => undefined,
     removeAll: async () => undefined,
     update: async () => undefined,
-    onClicked: noOpEvent,
-  } as unknown as typeof chrome.contextMenus;
+    onClicked: { addListener: () => undefined },
+  };
 }
 
 await import('./reporting-background');

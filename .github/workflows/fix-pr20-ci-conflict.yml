@@ -18,7 +18,7 @@ jobs:
           ref: fix/instant-cached-ad-blocking
           fetch-depth: 0
 
-      - name: Merge latest main and preserve both regression suites
+      - name: Merge latest main
         run: |
           git fetch origin main
           git config user.name "github-actions[bot]"
@@ -32,9 +32,16 @@ jobs:
             echo "Conflicts: $conflicts"
             test "$conflicts" = "tests/runtime-regressions.test.mjs"
             git checkout --ours tests/runtime-regressions.test.mjs
-            python - <<'PY'
+            git add tests/runtime-regressions.test.mjs
+            git commit --no-edit
+          fi
+
+      - name: Preserve scrollbar regression from main
+        shell: python
+        run: |
           from pathlib import Path
           import subprocess
+
           path = Path('tests/runtime-regressions.test.mjs')
           ours = path.read_text()
           main = subprocess.check_output(['git', 'show', 'origin/main:tests/runtime-regressions.test.mjs'], text=True)
@@ -42,10 +49,6 @@ jobs:
           if marker not in ours and marker in main:
               ours = ours.rstrip() + '\n\n' + main[main.index(marker):].strip() + '\n'
               path.write_text(ours)
-          PY
-            git add tests/runtime-regressions.test.mjs
-            git commit --no-edit
-          fi
 
       - name: Prepare deterministic cache E2E RED case and dimension fix
         shell: python
@@ -68,14 +71,13 @@ jobs:
 
           test_path = Path('tests/e2e/instant-blocking.spec.mjs')
           test = test_path.read_text()
-          start = test.find('function waitForReloadedExtensionServiceWorker() {')
-          if start >= 0:
-              end = test.find('\n}\n', start)
-              test = test[:start] + test[end + 3:]
-          start = test.find('async function reloadExtensionServiceWorker() {')
-          if start >= 0:
-              end = test.find('\n}\n', start)
-              test = test[:start] + test[end + 3:]
+          for helper in ('function waitForReloadedExtensionServiceWorker() {', 'async function reloadExtensionServiceWorker() {'):
+              start = test.find(helper)
+              if start >= 0:
+                  end = test.find('\n}\n', start)
+                  if end < 0:
+                      raise SystemExit(f'helper end missing: {helper}')
+                  test = test[:start] + test[end + 3:]
           test = test.replace('  await reloadExtensionServiceWorker();\n\n', '')
           test = test.replace("  const nextWorker = waitForReloadedExtensionServiceWorker();\n  await worker.evaluate(() => chrome.runtime.reload());\n\n", '')
           test = test.replace('  worker = await nextWorker;\n', '')
@@ -105,6 +107,7 @@ jobs:
         shell: python
         run: |
           from pathlib import Path
+
           path = Path('src/background.ts')
           source = path.read_text()
           marker = 'loadClipCache();\n\n// Coalesces concurrent classify calls for the same image and writes the cache.'

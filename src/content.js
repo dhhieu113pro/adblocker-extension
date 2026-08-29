@@ -13,6 +13,7 @@ class AdBlockerOverlay {
     this.adCheckQueue = [];
     this.adCheckProcessing = false;
     this.adCheckUrls = new Set();
+    this.protectionGeneration = 0;
     this.scanTimer = null;
     this.jwMutedVideos = new Map();
     this.jwSkipTimer = null;
@@ -56,7 +57,12 @@ class AdBlockerOverlay {
     chrome.storage?.onChanged?.addListener((changes, area) => {
       if (area === "sync" && changes.autoHideAds) {
         this.autoHideAds = changes.autoHideAds.newValue;
-        if (this.autoHideAds) this.scheduleScan();
+        if (this.autoHideAds) {
+          this.processedImages = new WeakSet();
+          this.scheduleScan();
+        } else {
+          this.disableSiteBlocking();
+        }
       }
       if (area === "sync" && changes.disabledSites) {
         const disabled = (changes.disabledSites.newValue || []).includes(window.location.hostname.toLowerCase());
@@ -69,10 +75,13 @@ class AdBlockerOverlay {
   }
 
   disableSiteBlocking() {
-    this.detectedAdsMap.forEach((ad) => this.unhideElement(ad.targetElement));
+    this.protectionGeneration += 1;
+    this.restoreJwMutedVideos();
+    document.querySelectorAll('[data-webllm-ad-hidden="true"]').forEach((element) => this.unhideElement(element));
     this.detectedAdsMap.clear();
     this.adCheckQueue = [];
     this.adCheckUrls.clear();
+    this.processedImages = new WeakSet();
   }
 
   scheduleScan() {
@@ -81,6 +90,15 @@ class AdBlockerOverlay {
       this.scanTimer = null;
       if (this.autoHideAds && !this.siteDisabled) { this.scanImages(); this.scanVideos(); }
     }, 150);
+  }
+
+  restoreJwMutedVideos() {
+    this.jwMutedVideos.forEach((state, video) => {
+      if (!video.isConnected) return;
+      video.muted = state.muted;
+      video.volume = state.volume;
+    });
+    this.jwMutedVideos.clear();
   }
 
   setupJwAdSkipAutomation() {
@@ -113,14 +131,7 @@ class AdBlockerOverlay {
     readyButton.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window }));
     readyButton.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, view: window }));
     readyButton.click();
-    window.setTimeout(() => {
-      this.jwMutedVideos.forEach((state, video) => {
-        if (!video.isConnected) return;
-        video.muted = state.muted;
-        video.volume = state.volume;
-      });
-      this.jwMutedVideos.clear();
-    }, 150);
+    window.setTimeout(() => this.restoreJwMutedVideos(), 150);
   }
 
   initMessageListener() {
@@ -266,7 +277,7 @@ class AdBlockerOverlay {
   }
 
   scanIframes() {
-    if (!this.autoHideAds) return;
+    if (!this.autoHideAds || this.siteDisabled) return;
     Array.from(document.querySelectorAll("iframe")).forEach((iframe) => {
       if (this.processedImages.has(iframe)) return;
       if (this.isAdIframeCandidate(iframe)) { this.processedImages.add(iframe); this.hideAdIframe(iframe); }
@@ -402,11 +413,12 @@ class AdBlockerOverlay {
     this.adCheckProcessing = true;
     while (this.adCheckQueue.length > 0) {
       const { img, msg } = this.adCheckQueue.shift();
+      const generation = this.protectionGeneration;
       if (!img?.isConnected) continue;
       const imageDataUrl = await this.fetchImageDataUrl(msg.imageUrl);
       await new Promise((resolve) => {
         chrome.runtime.sendMessage({ type: "detectAd", ...msg, imageDataUrl }, (res) => {
-          if (res?.isAd && res.confidence >= 50 && img?.isConnected) { this.hideAd(img, res); this.cleanupEmptyAdContainers(); }
+          if (generation === this.protectionGeneration && this.autoHideAds && !this.siteDisabled && res?.isAd && res.confidence >= 50 && img?.isConnected) { this.hideAd(img, res); this.cleanupEmptyAdContainers(); }
           resolve();
         });
       });

@@ -1,5 +1,6 @@
 import { isAdUrl, isExternalAdUrl, isStreamingKeywordSite, isLocalDevelopmentUrl, AD_DOMAINS, loadRemoteAdRules } from "./shared";
 import { FULL_SITE_ORIGINS, syncFullProtectionRegistration } from "./site-access";
+import { getDnrProtectionPolicy, isAutomaticProtectionEnabled } from "./protection-state.mjs";
 
 const tabBlockedCounts = new Map<number, number>();
 const tabCategories = new Map<number, { category: string, confidence: number }>();
@@ -15,16 +16,19 @@ async function setupDnrRules() {
   try {
     const existing = await chrome.declarativeNetRequest.getDynamicRules();
     const existingIds = existing.map((r) => r.id);
+    const protectionSettings = await chrome.storage.sync.get(["autoHideAds", "disabledSites"]);
+    const { enabled, excludedInitiatorDomains } = getDnrProtectionPolicy(protectionSettings);
     const adDomains = Array.from(AD_DOMAINS);
-    const rules = adDomains.map((domain, i) => ({
+    const rules = enabled ? adDomains.map((domain, i) => ({
       id: AD_DNR_BASE + i,
       priority: 1,
       action: { type: "block" as const },
       condition: {
         urlFilter: `||${domain}^`,
         resourceTypes: DNR_RESOURCE_TYPES,
+        ...(excludedInitiatorDomains.length > 0 ? { excludedInitiatorDomains } : {}),
       },
-    }));
+    })) : [];
 
     await chrome.declarativeNetRequest.updateDynamicRules({
       removeRuleIds: existingIds,
@@ -38,6 +42,24 @@ async function setupDnrRules() {
 
 setupDnrRules();
 loadRemoteAdRules().then(() => setupDnrRules());
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "sync" && (changes.autoHideAds || changes.disabledSites)) setupDnrRules();
+});
+
+async function isProtectionEnabledForUrl(url: string) {
+  const settings = await chrome.storage.sync.get(["autoHideAds", "disabledSites"]);
+  return isAutomaticProtectionEnabled(settings, url);
+}
+
+async function isTabStillProtected(tabId: number, expectedUrl: string) {
+  try {
+    const currentTab = await chrome.tabs.get(tabId);
+    if (!currentTab?.url || currentTab.url !== expectedUrl) return false;
+    return isProtectionEnabledForUrl(currentTab.url);
+  } catch {
+    return false;
+  }
+}
 
 // --- Per-image CLIP result cache (#3) ---
 const CLIP_CACHE_KEY = "webllmClipCache";
@@ -313,6 +335,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "detectAd") {
     (async () => {
       try {
+        if (!(await isProtectionEnabledForUrl(sender.tab?.url || ""))) {
+          sendResponse({
+            success: true,
+            isAd: false,
+            confidence: 0,
+            method: "Protection bypass",
+            reasons: ["Automatic protection is disabled for this site"],
+          });
+          return;
+        }
+
         // The service worker may receive the first page scan before the
         // fire-and-forget startup load above has completed. Always wait for
         // persisted results before deciding to run a new AI classification.
@@ -541,11 +574,12 @@ function logAdBlockedInHistory(adUrl: string, pageUrl: string) {
 // 1. Close popup tabs to external ad origins
 chrome.webNavigation.onCreatedNavigationTarget.addListener((details) => {
   if (details.sourceTabId && details.sourceTabId !== -1) {
-    chrome.tabs.get(details.sourceTabId, (sourceTab) => {
+    chrome.tabs.get(details.sourceTabId, async (sourceTab) => {
       if (chrome.runtime.lastError || !sourceTab || !sourceTab.url) return;
       
       const sourceUrl = sourceTab.url;
       if (sourceUrl.startsWith("chrome://") || sourceUrl.startsWith("chrome-extension://")) return;
+      if (!(await isProtectionEnabledForUrl(sourceUrl))) return;
 
       // Only close popups opened from streaming/ad-prone sites.
       const shouldBlock =
@@ -573,13 +607,14 @@ chrome.webNavigation.onCreatedNavigationTarget.addListener((details) => {
 chrome.webNavigation.onBeforeNavigate.addListener((details) => {
   if (details.frameId !== 0) return;
   
-  chrome.tabs.get(details.tabId, (tab) => {
+  chrome.tabs.get(details.tabId, async (tab) => {
     if (chrome.runtime.lastError || !tab || !tab.url) return;
     
     const sourceUrl = lastCommittedUrls.get(details.tabId) || tab.url;
     if (sourceUrl.startsWith("chrome://") || sourceUrl.startsWith("chrome-extension://") || sourceUrl === "about:blank") {
       return;
     }
+    if (!(await isProtectionEnabledForUrl(sourceUrl))) return;
 
     // Only block same-tab redirects if the source is a streaming site AND the target matches ad patterns
     const shouldBlock = isStreamingOrAdProneSite(sourceUrl, details.tabId) && isAdUrl(details.url, undefined, true);
@@ -616,6 +651,10 @@ chrome.webNavigation.onCompleted.addListener((details) => {
   setTimeout(() => {
     chrome.tabs.get(tabId, async (tab) => {
       if (chrome.runtime.lastError || !tab || !tab.active || tab.status === "loading") return;
+      if (!(await isProtectionEnabledForUrl(url))) {
+        tabCategories.delete(tabId);
+        return;
+      }
 
       const modelSettings = await chrome.storage.sync.get("visionModel");
       const selectedModel = modelSettings.visionModel || "mobilenet";
@@ -667,6 +706,7 @@ chrome.webNavigation.onCompleted.addListener((details) => {
                                topMatch.label.includes("promotional");
 
               if (isAdPage && topMatch.score >= 0.50) {
+                if (!(await isTabStillProtected(tabId, url))) return;
                 console.warn(`[AdBlocker] AI visually identified popup tab ${tabId} as an AD LANDER: "${topMatch.label}" (${confidence}% confidence). Closing tab.`);
                 
                 // Close the popup tab
@@ -712,6 +752,10 @@ chrome.webNavigation.onCompleted.addListener((details) => {
               categoryCache.set(url, { category, confidence });
             }
 
+            if (!(await isTabStillProtected(tabId, url))) {
+              tabCategories.delete(tabId);
+              return;
+            }
             console.log(`[AdBlocker] AI Classified tab ${tabId} (${url}) as: ${category} (${finalConfidence}% confidence)`);
             tabCategories.set(tabId, { category, confidence: finalConfidence });
 

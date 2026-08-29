@@ -24,7 +24,7 @@ test("Chrome Store manifest makes broad browsing access optional", () => {
   assert.deepEqual(manifest.optional_host_permissions, ["http://*/*", "https://*/*"]);
   assert.equal("content_scripts" in manifest, false);
   assert.equal("web_accessible_resources" in manifest, false);
-  assert.equal(manifest.version, "1.0.12");
+  assert.equal(manifest.version, "1.0.13");
   assert.equal(
     manifest.content_security_policy?.extension_pages,
     "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';"
@@ -43,9 +43,9 @@ test("Chrome Store build packages stable runtime scripts and internal offscreen 
   assert.match(copyScript, /offscreen\.html/);
   assert.match(copyScript, /runtime\/content\.js|runtime["'],\s*["']content\.js/);
   assert.match(copyScript, /runtime\/inject\.js|runtime["'],\s*["']inject\.js/);
-  assert.equal(packageJson.version, "1.0.12");
-  assert.equal(packageLock.version, "1.0.12");
-  assert.equal(packageLock.packages?.[""]?.version, "1.0.12");
+  assert.equal(packageJson.version, "1.0.13");
+  assert.equal(packageLock.version, "1.0.13");
+  assert.equal(packageLock.packages?.[""]?.version, "1.0.13");
 });
 
 test("background synchronizes optional access and runtime scripts are injection-safe", () => {

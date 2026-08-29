@@ -20,11 +20,18 @@ test("automatic analysis skips ordinary editorial photos without ad context", ()
   assert.equal(shouldAutoAnalyzeImageCandidate({ width: 1200, height: 675, url: "https://cdn.site.test/hero.jpg" }), false);
 });
 
-test("automatic analysis accepts images with explicit ad evidence", () => {
-  assert.equal(shouldAutoAnalyzeImageCandidate({ width: 728, height: 90, url: "https://cdn.site.test/ads/banner.jpg" }), true);
+test("automatic analysis restores v1.0.11 banner geometry detection", () => {
+  assert.equal(shouldAutoAnalyzeImageCandidate({ width: 728, height: 90, url: "https://cdn.site.test/creative.jpg" }), true);
+  assert.equal(shouldAutoAnalyzeImageCandidate({ width: 300, height: 250, url: "https://cdn.site.test/creative.jpg" }), true);
+  assert.equal(shouldAutoAnalyzeImageCandidate({ width: 1000, height: 200, url: "https://cdn.site.test/creative.jpg" }), true);
+});
+
+test("automatic analysis restores v1.0.11 link and URL ad signals", () => {
   assert.equal(shouldAutoAnalyzeImageCandidate({ width: 1200, height: 800, url: "https://cdn.site.test/photo.jpg", linkRel: "sponsored" }), true);
+  assert.equal(shouldAutoAnalyzeImageCandidate({ width: 1200, height: 800, url: "https://cdn.site.test/photo.jpg", linkRel: "nofollow" }), true);
   assert.equal(shouldAutoAnalyzeImageCandidate({ width: 1200, height: 800, url: "https://cdn.site.test/photo.jpg", hasCloseAdButton: true }), true);
   assert.equal(shouldAutoAnalyzeImageCandidate({ width: 300, height: 250, url: "https://doubleclick.net/banner.jpg" }), true);
+  assert.equal(shouldAutoAnalyzeImageCandidate({ width: 500, height: 500, url: "https://cdn.site.test/quangcao/creative.jpg" }), true);
 });
 
 test("obvious UI and branding images are skipped", () => {
@@ -108,12 +115,12 @@ test("AI image request intentionally contains no geometry fields", () => {
   });
 });
 
-test("automatic image hiding requires high-confidence ad detection", () => {
+test("automatic image hiding restores the v1.0.11 confidence threshold", () => {
   assert.equal(shouldBlockDetectionResult(null), false);
   assert.equal(shouldBlockDetectionResult({ isAd: false, confidence: 99 }), false);
-  assert.equal(shouldBlockDetectionResult({ isAd: true, confidence: 50 }), false);
-  assert.equal(shouldBlockDetectionResult({ isAd: true, confidence: 79 }), false);
-  assert.equal(shouldBlockDetectionResult({ isAd: true, confidence: 80 }), true);
+  assert.equal(shouldBlockDetectionResult({ isAd: true, confidence: 49 }), false);
+  assert.equal(shouldBlockDetectionResult({ isAd: true, confidence: 50 }), true);
+  assert.equal(shouldBlockDetectionResult({ isAd: true, confidence: 79 }), true);
   assert.equal(shouldBlockDetectionResult({ isAd: true, confidence: 94 }, 95), false);
   assert.equal(shouldBlockDetectionResult({ isAd: true, confidence: 95 }, 95), true);
   assert.equal(shouldBlockDetectionResult({ isAd: true }), false);

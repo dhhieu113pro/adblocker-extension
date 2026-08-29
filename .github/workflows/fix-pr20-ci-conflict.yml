@@ -1,0 +1,88 @@
+name: Repair PR20 CI and conflict
+
+on:
+  push:
+    branches:
+      - fix/instant-cached-ad-blocking
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/instant-cached-ad-blocking
+          fetch-depth: 0
+      - name: Merge latest main
+        run: |
+          git fetch origin main
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git merge origin/main --no-edit
+      - name: Fix declared dimensions and service-worker E2E trigger
+        shell: python
+        run: |
+          from pathlib import Path
+
+          content_path = Path('src/content.js')
+          content = content_path.read_text()
+          old = 'const width = img.naturalWidth || img.width || 0;\n    const height = img.naturalHeight || img.height || 0;'
+          new = 'const width = parseInt(img.getAttribute("width") || "0", 10) || img.naturalWidth || img.width || 0;\n    const height = parseInt(img.getAttribute("height") || "0", 10) || img.naturalHeight || img.height || 0;'
+          if old not in content:
+              raise SystemExit('shouldAnalyzeImage dimension pattern missing')
+          content = content.replace(old, new, 1)
+
+          old = 'const width = img.naturalWidth || img.width || 0;\n        const height = img.naturalHeight || img.height || 0;'
+          new = 'const width = parseInt(img.getAttribute("width") || "0", 10) || img.naturalWidth || img.width || 0;\n        const height = parseInt(img.getAttribute("height") || "0", 10) || img.naturalHeight || img.height || 0;'
+          if old not in content:
+              raise SystemExit('scanImages dimension pattern missing')
+          content = content.replace(old, new, 1)
+          content_path.write_text(content)
+
+          test_path = Path('tests/e2e/instant-blocking.spec.mjs')
+          test = test_path.read_text()
+          old = '''async function reloadExtensionServiceWorker() {
+            const nextWorker = context.waitForEvent('serviceworker', {
+              predicate: (item) => item.url().startsWith('chrome-extension://'),
+              timeout: 5000,
+            });
+            await worker.evaluate(() => chrome.runtime.reload());
+            worker = await nextWorker;
+          }'''.replace('          ', '')
+          new = '''function waitForReloadedExtensionServiceWorker() {
+            return context.waitForEvent('serviceworker', {
+              predicate: (item) => item.url().startsWith('chrome-extension://'),
+              timeout: 5000,
+            });
+          }'''.replace('          ', '')
+          if old not in test:
+              raise SystemExit('service worker helper pattern missing')
+          test = test.replace(old, new, 1)
+          old = '  await reloadExtensionServiceWorker();\n\n  const page = await context.newPage();\n  await page.goto(`${baseUrl}/cached-page`);'
+          new = '  const nextWorker = waitForReloadedExtensionServiceWorker();\n  await worker.evaluate(() => chrome.runtime.reload());\n\n  const page = await context.newPage();\n  await page.goto(`${baseUrl}/cached-page`);\n  worker = await nextWorker;'
+          if old not in test:
+              raise SystemExit('cached test reload pattern missing')
+          test = test.replace(old, new, 1)
+          test_path.write_text(test)
+      - name: Verify unit tests and builds
+        run: |
+          npm ci
+          npm run test:coverage
+          npm run build
+          npm run build:edge-android
+      - name: Verify installed-extension E2E
+        run: |
+          npm install --no-save --package-lock=false @playwright/test@1.55.0
+          npx playwright install --with-deps chromium
+          npm run test:e2e
+      - name: Commit and push repair
+        run: |
+          git add src/content.js tests/e2e/instant-blocking.spec.mjs
+          if ! git diff --cached --quiet; then
+            git commit -m "fix: make instant blocking E2E deterministic"
+          fi
+          git push origin HEAD:fix/instant-cached-ad-blocking

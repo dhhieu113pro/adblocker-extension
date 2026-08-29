@@ -6,7 +6,6 @@ import { fileURLToPath } from 'node:url';
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const sourceManifestPath = path.join(rootDir, 'src', 'manifest.json');
-const androidManifestPath = path.join(rootDir, 'src', 'manifest.edge-android.json');
 
 export function createEdgeAndroidManifest(manifest) {
   const permissions = Array.isArray(manifest.permissions)
@@ -36,11 +35,31 @@ export function validateEdgeAndroidManifest(manifest) {
   return manifest;
 }
 
-async function prepareManifest() {
-  const source = JSON.parse(await readFile(sourceManifestPath, 'utf8'));
+async function buildManifest() {
+  const originalManifestText = await readFile(sourceManifestPath, 'utf8');
+  const source = JSON.parse(originalManifestText);
   const androidManifest = validateEdgeAndroidManifest(createEdgeAndroidManifest(source));
-  await writeFile(androidManifestPath, `${JSON.stringify(androidManifest, null, 2)}\n`);
-  console.log(`✓ Edge Android manifest prepared: ${path.relative(rootDir, androidManifestPath)}`);
+  const npx = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+
+  try {
+    // Parcel's web-extension transformer only treats a file named manifest.json
+    // as the extension manifest. Temporarily swap the source manifest so the
+    // Android build produces dist-edge-android/manifest.json, then restore the
+    // desktop manifest byte-for-byte even when Parcel fails.
+    await writeFile(sourceManifestPath, `${JSON.stringify(androidManifest, null, 2)}\n`);
+    const result = spawnSync(npx, [
+      'parcel', 'build', 'src/manifest.json',
+      '--config', '@parcel/config-webextension',
+      '--dist-dir', 'dist-edge-android',
+      '--no-source-maps',
+    ], { cwd: rootDir, stdio: 'inherit' });
+
+    if (result.error) throw result.error;
+    if (result.status !== 0) throw new Error(`Parcel Edge Android manifest build failed with exit code ${result.status}`);
+    console.log('✓ Edge Android manifest built: dist-edge-android/manifest.json');
+  } finally {
+    await writeFile(sourceManifestPath, originalManifestText);
+  }
 }
 
 async function packageCrx() {
@@ -74,7 +93,7 @@ async function packageCrx() {
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const command = process.argv[2];
-  if (command === 'prepare') await prepareManifest();
+  if (command === 'build-manifest') await buildManifest();
   else if (command === 'package') await packageCrx();
   else throw new Error(`Unknown command: ${command || '<missing>'}`);
 }

@@ -39,6 +39,14 @@ test('Android manifest helper restores the desktop manifest after the temporary 
   assert.match(source, /dist-edge-android\/manifest\.json/);
 });
 
+test('Android background stays statically bundleable while shimming unsupported context menus first', async () => {
+  const worker = await readFile(new URL('../src/reporting-background-android.ts', import.meta.url), 'utf8');
+  const shim = await readFile(new URL('../src/android-context-menus-shim.ts', import.meta.url), 'utf8');
+  assert.doesNotMatch(worker, /import\s*\(/);
+  assert.match(worker, /import '\.\/android-context-menus-shim';\s*import '\.\/reporting-background';/s);
+  assert.match(shim, /if \(!chromeApi\.contextMenus\)/);
+});
+
 test('release workflow publishes an Edge Android CRX and requires signing key', async () => {
   const workflow = await readFile(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8');
   assert.match(workflow, /EDGE_ANDROID_CRX_PRIVATE_KEY/);

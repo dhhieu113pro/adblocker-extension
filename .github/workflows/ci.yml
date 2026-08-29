@@ -34,6 +34,13 @@ jobs:
       - name: Build extension
         run: npm run build
 
+      - name: Build Edge Android extension
+        run: npm run build:edge-android
+
+      - name: Validate Edge Android manifest
+        run: |
+          node -e "const fs=require('fs');const m=JSON.parse(fs.readFileSync('dist-edge-android/manifest.json','utf8'));if(m.permissions?.includes('contextMenus'))throw new Error('Android manifest contains contextMenus');if(!m.version)throw new Error('Android manifest missing version');"
+
       - name: Install Playwright test runner
         run: npm install --no-save --package-lock=false @playwright/test@1.55.0
 

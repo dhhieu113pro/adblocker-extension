@@ -6,6 +6,8 @@ import { shouldAutoAnalyzeImageCandidate, shouldBlockDetectionResult } from "./i
 class AdBlockerOverlay {
   constructor() {
     this.processedImages = new WeakSet();
+    this.processedImageUrls = new WeakMap();
+    this.currentPageUrl = window.location.href;
     this.detectedAdsMap = new Map();
     this.autoHideAds = true;
     this.siteDisabled = false;
@@ -27,6 +29,7 @@ class AdBlockerOverlay {
     this.injectGlobalStyles();
     await this.loadSettings();
     this.setupMutationObserver();
+    this.setupNavigationTracking();
     this.initMessageListener();
     this.setupContextMenuTracker();
     this.setupJwAdSkipAutomation();
@@ -35,6 +38,7 @@ class AdBlockerOverlay {
     loadRemoteAdRules().then(() => {
       if (!this.autoHideAds || this.siteDisabled) return;
       this.processedImages = new WeakSet();
+      this.processedImageUrls = new WeakMap();
       this.scheduleScan();
     });
     setInterval(() => this.scanClickjackingOverlays(), 1000);
@@ -65,6 +69,7 @@ class AdBlockerOverlay {
         this.autoHideAds = changes.autoHideAds.newValue;
         if (this.autoHideAds) {
           this.processedImages = new WeakSet();
+          this.processedImageUrls = new WeakMap();
           this.scheduleScan();
         } else {
           this.disableSiteBlocking();
@@ -74,7 +79,7 @@ class AdBlockerOverlay {
         const disabled = (changes.disabledSites.newValue || []).includes(window.location.hostname.toLowerCase());
         this.siteDisabled = disabled;
         if (disabled) this.disableSiteBlocking();
-        else { this.processedImages = new WeakSet(); this.scheduleScan(); }
+        else { this.processedImages = new WeakSet(); this.processedImageUrls = new WeakMap(); this.scheduleScan(); }
       }
       if (area === "sync" && changes.allowedAds) this.allowedAds = new Set(changes.allowedAds.newValue || []);
     });
@@ -88,6 +93,7 @@ class AdBlockerOverlay {
     this.adCheckQueue = [];
     this.adCheckUrls.clear();
     this.processedImages = new WeakSet();
+    this.processedImageUrls = new WeakMap();
   }
 
   scheduleScan() {
@@ -156,6 +162,7 @@ class AdBlockerOverlay {
           window.dispatchEvent(new CustomEvent("aiVisionFullProtectionState", { detail: true }));
           if (!this.siteDisabled) {
             this.processedImages = new WeakSet();
+            this.processedImageUrls = new WeakMap();
             this.scheduleScan();
           }
           sendResponse({ success: true, enabled: !this.siteDisabled });
@@ -207,11 +214,46 @@ class AdBlockerOverlay {
     if (el.dataset.webllmOriginalDisplay) el.style.display = el.dataset.webllmOriginalDisplay;
   }
 
+  handlePageNavigation() {
+    const nextUrl = window.location.href;
+    if (nextUrl === this.currentPageUrl) return;
+    this.currentPageUrl = nextUrl;
+    this.protectionGeneration += 1;
+    this.detectedAdsMap.clear();
+    this.adCheckQueue = [];
+    this.adCheckUrls.clear();
+    this.processedImages = new WeakSet();
+    this.processedImageUrls = new WeakMap();
+    if (!this.autoHideAds || this.siteDisabled) return;
+    this.scanImages();
+    this.scanVideos();
+  }
+
+  setupNavigationTracking() {
+    const originalPushState = history.pushState.bind(history);
+    history.pushState = (...args) => {
+      const result = originalPushState(...args);
+      queueMicrotask(() => this.handlePageNavigation());
+      return result;
+    };
+    const originalReplaceState = history.replaceState.bind(history);
+    history.replaceState = (...args) => {
+      const result = originalReplaceState(...args);
+      queueMicrotask(() => this.handlePageNavigation());
+      return result;
+    };
+    window.addEventListener("popstate", () => queueMicrotask(() => this.handlePageNavigation()));
+    window.addEventListener("hashchange", () => queueMicrotask(() => this.handlePageNavigation()));
+  }
+
   setupMutationObserver() {
     const observer = new MutationObserver((mutations) => {
+      if (window.location.href !== this.currentPageUrl) this.handlePageNavigation();
       let hasNewNodes = false;
+      let hasImageSourceChange = false;
       for (const m of mutations) {
         if (m.type === "childList" && m.addedNodes.length > 0) hasNewNodes = true;
+        if (m.type === "attributes" && m.target?.tagName === "IMG" && ["src", "data-src", "data-lazy-src"].includes(m.attributeName)) hasImageSourceChange = true;
         if (m.type === "attributes" && m.attributeName === "style" && m.target) {
           const target = m.target;
           if (target.dataset?.webllmAdHidden === "true" && (target.style.display !== "none" || target.style.visibility !== "hidden")) this.hideElement(target);
@@ -219,6 +261,7 @@ class AdBlockerOverlay {
       }
       if (hasNewNodes) this.scanClickjackingOverlays();
       if (hasNewNodes) this.scanKnownAdSlots();
+      if (hasImageSourceChange) this.scanImages();
       this.scheduleScan();
     });
     observer.observe(document.body || document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["style", "class", "src", "data-src", "data-lazy-src"] });
@@ -353,17 +396,23 @@ class AdBlockerOverlay {
     chrome.runtime.sendMessage({ type: "adBlocked", adUrl: src, adDomain: domain || "iframe ad", pageUrl: window.location.href });
   }
 
+  getImageSource(img) {
+    return img.currentSrc || img.src || img.getAttribute("data-src") || img.getAttribute("data-lazy-src") || "";
+  }
+
   scanImages() {
     if (this.siteDisabled) return;
     this.scanIframes();
     this.scanKnownAdSlots();
     Array.from(document.querySelectorAll("img")).forEach((img) => {
-      if (this.processedImages.has(img)) return;
+      const initialSrc = this.getImageSource(img);
+      if (this.processedImageUrls.get(img) === initialSrc) return;
       const checkAndProcess = () => {
+        const imgSrc = this.getImageSource(img);
+        if (this.processedImageUrls.get(img) === imgSrc) return;
         if (!this.shouldAnalyzeImage(img)) return;
-        this.processedImages.add(img);
+        this.processedImageUrls.set(img, imgSrc);
         if (!this.autoHideAds) return;
-        const imgSrc = img.currentSrc || img.src;
         const width = parseInt(img.getAttribute("width") || "0", 10) || img.naturalWidth || img.width || 0;
         const height = parseInt(img.getAttribute("height") || "0", 10) || img.naturalHeight || img.height || 0;
         if (isHardAdNetwork(imgSrc)) {
@@ -396,7 +445,7 @@ class AdBlockerOverlay {
       // before their pixels finish loading. Retry after load only when the early
       // pass did not identify this image as a candidate.
       checkAndProcess();
-      if (!img.complete && !this.processedImages.has(img)) {
+      if (!img.complete && this.processedImageUrls.get(img) !== this.getImageSource(img)) {
         img.addEventListener("load", checkAndProcess, { once: true });
       }
     });
@@ -437,10 +486,10 @@ class AdBlockerOverlay {
 
   async processAdCheck({ img, msg }) {
     const generation = this.protectionGeneration;
-    if (!img?.isConnected) return;
+    if (!img?.isConnected || this.getImageSource(img) !== msg.imageUrl) return;
 
     const preflight = await this.requestAdDecision({ ...msg, preflightOnly: true });
-    if (generation !== this.protectionGeneration || !this.autoHideAds || this.siteDisabled || !img?.isConnected) return;
+    if (generation !== this.protectionGeneration || !this.autoHideAds || this.siteDisabled || !img?.isConnected || this.getImageSource(img) !== msg.imageUrl) return;
     if (shouldBlockDetectionResult(preflight)) {
       this.hideAd(img, preflight);
       this.cleanupEmptyAdContainers();
@@ -452,7 +501,7 @@ class AdBlockerOverlay {
     if (!imageDataUrl || generation !== this.protectionGeneration || !this.autoHideAds || this.siteDisabled || !img?.isConnected) return;
 
     const result = await this.requestAdDecision({ ...msg, imageDataUrl });
-    if (generation === this.protectionGeneration && this.autoHideAds && !this.siteDisabled && shouldBlockDetectionResult(result) && img?.isConnected) {
+    if (generation === this.protectionGeneration && this.autoHideAds && !this.siteDisabled && shouldBlockDetectionResult(result) && img?.isConnected && this.getImageSource(img) === msg.imageUrl) {
       this.hideAd(img, result);
       this.cleanupEmptyAdContainers();
     }

@@ -17,7 +17,8 @@ jobs:
         with:
           ref: fix/instant-cached-ad-blocking
           fetch-depth: 0
-      - name: Merge latest main
+
+      - name: Merge latest main and preserve both regression suites
         run: |
           git fetch origin main
           git config user.name "github-actions[bot]"
@@ -31,80 +32,106 @@ jobs:
             echo "Conflicts: $conflicts"
             test "$conflicts" = "tests/runtime-regressions.test.mjs"
             git checkout --ours tests/runtime-regressions.test.mjs
+            python - <<'PY'
+          from pathlib import Path
+          import subprocess
+          path = Path('tests/runtime-regressions.test.mjs')
+          ours = path.read_text()
+          main = subprocess.check_output(['git', 'show', 'origin/main:tests/runtime-regressions.test.mjs'], text=True)
+          marker = 'test("popup uses slim themed scrollbars for the page and inner lists"'
+          if marker not in ours and marker in main:
+              ours = ours.rstrip() + '\n\n' + main[main.index(marker):].strip() + '\n'
+              path.write_text(ours)
+          PY
             git add tests/runtime-regressions.test.mjs
             git commit --no-edit
           fi
-      - name: Fix declared dimensions and service-worker E2E trigger
+
+      - name: Prepare deterministic cache E2E RED case and dimension fix
         shell: python
         run: |
           from pathlib import Path
 
           content_path = Path('src/content.js')
           content = content_path.read_text()
-          old = 'const width = img.naturalWidth || img.width || 0;\n    const height = img.naturalHeight || img.height || 0;'
-          new = 'const width = parseInt(img.getAttribute("width") || "0", 10) || img.naturalWidth || img.width || 0;\n    const height = parseInt(img.getAttribute("height") || "0", 10) || img.naturalHeight || img.height || 0;'
-          if old not in content:
-              raise SystemExit('shouldAnalyzeImage dimension pattern missing')
-          content = content.replace(old, new, 1)
-
-          old = 'const width = img.naturalWidth || img.width || 0;\n        const height = img.naturalHeight || img.height || 0;'
-          new = 'const width = parseInt(img.getAttribute("width") || "0", 10) || img.naturalWidth || img.width || 0;\n        const height = parseInt(img.getAttribute("height") || "0", 10) || img.naturalHeight || img.height || 0;'
-          if old not in content:
-              raise SystemExit('scanImages dimension pattern missing')
-          content = content.replace(old, new, 1)
+          content = content.replace(
+              'const width = img.naturalWidth || img.width || 0;\n    const height = img.naturalHeight || img.height || 0;',
+              'const width = parseInt(img.getAttribute("width") || "0", 10) || img.naturalWidth || img.width || 0;\n    const height = parseInt(img.getAttribute("height") || "0", 10) || img.naturalHeight || img.height || 0;',
+              1,
+          )
+          content = content.replace(
+              'const width = img.naturalWidth || img.width || 0;\n        const height = img.naturalHeight || img.height || 0;',
+              'const width = parseInt(img.getAttribute("width") || "0", 10) || img.naturalWidth || img.width || 0;\n        const height = parseInt(img.getAttribute("height") || "0", 10) || img.naturalHeight || img.height || 0;',
+              1,
+          )
           content_path.write_text(content)
 
           test_path = Path('tests/e2e/instant-blocking.spec.mjs')
           test = test_path.read_text()
-          old = '''async function reloadExtensionServiceWorker() {
-            const nextWorker = context.waitForEvent('serviceworker', {
-              predicate: (item) => item.url().startsWith('chrome-extension://'),
-              timeout: 5000,
-            });
-            await worker.evaluate(() => chrome.runtime.reload());
-            worker = await nextWorker;
-          }'''.replace('          ', '')
-          new = '''function waitForReloadedExtensionServiceWorker() {
-            return context.waitForEvent('serviceworker', {
-              predicate: (item) => item.url().startsWith('chrome-extension://'),
-              timeout: 5000,
-            });
-          }'''.replace('          ', '')
-          if old not in test:
-              raise SystemExit('service worker helper pattern missing')
-          test = test.replace(old, new, 1)
-          old = '  await reloadExtensionServiceWorker();\n\n  const page = await context.newPage();\n  await page.goto(`${baseUrl}/cached-page`);'
-          new = '  const nextWorker = waitForReloadedExtensionServiceWorker();\n  await worker.evaluate(() => chrome.runtime.reload());\n\n  const page = await context.newPage();\n  await page.goto(`${baseUrl}/cached-page`);\n  worker = await nextWorker;'
-          if old not in test:
-              raise SystemExit('cached test reload pattern missing')
-          test = test.replace(old, new, 1)
+          start = test.find('function waitForReloadedExtensionServiceWorker() {')
+          if start >= 0:
+              end = test.find('\n}\n', start)
+              test = test[:start] + test[end + 3:]
+          start = test.find('async function reloadExtensionServiceWorker() {')
+          if start >= 0:
+              end = test.find('\n}\n', start)
+              test = test[:start] + test[end + 3:]
+          test = test.replace('  await reloadExtensionServiceWorker();\n\n', '')
+          test = test.replace("  const nextWorker = waitForReloadedExtensionServiceWorker();\n  await worker.evaluate(() => chrome.runtime.reload());\n\n", '')
+          test = test.replace('  worker = await nextWorker;\n', '')
           test_path.write_text(test)
-      - name: Verify unit tests and builds
+
+      - name: Install and build for RED verification
         run: |
           npm ci
+          npm run build
+          npm install --no-save --package-lock=false @playwright/test@1.55.0
+          npx playwright install --with-deps chromium
+
+      - name: RED - persisted cache change is not yet observed by running worker
+        run: |
+          set +e
+          npx playwright test tests/e2e/instant-blocking.spec.mjs --grep "previously classified ads" 2>&1 | tee red.log
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" -eq 0 ]; then
+            echo "Expected cache-sync regression test to fail before production fix"
+            exit 1
+          fi
+          grep -q "previously classified ads" red.log
+          echo "RED confirmed"
+
+      - name: GREEN - synchronize in-memory CLIP cache with local storage changes
+        shell: python
+        run: |
+          from pathlib import Path
+          path = Path('src/background.ts')
+          source = path.read_text()
+          marker = 'loadClipCache();\n\n// Coalesces concurrent classify calls for the same image and writes the cache.'
+          replacement = '''loadClipCache();
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== "local" || !changes[CLIP_CACHE_KEY]) return;
+  const nextValue = changes[CLIP_CACHE_KEY].newValue || {};
+  clipCache = new Map(Object.entries(nextValue));
+  clipCacheLoaded = true;
+});
+
+// Coalesces concurrent classify calls for the same image and writes the cache.'''
+          if marker not in source:
+              raise SystemExit('CLIP cache insertion marker missing')
+          path.write_text(source.replace(marker, replacement, 1))
+
+      - name: Verify full suite and builds
+        run: |
           npm run test:coverage
           npm run build
           npm run build:edge-android
-      - name: Verify installed-extension E2E
+          npm run test:e2e
+
+      - name: Remove temporary repair workflow and push verified repair
         run: |
-          set -o pipefail
-          npm install --no-save --package-lock=false @playwright/test@1.55.0
-          npx playwright install --with-deps chromium
-          npm run test:e2e 2>&1 | tee e2e.log
-      - name: Upload E2E diagnostics
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: pr20-e2e-diagnostics
-          path: |
-            e2e.log
-            test-results
-            playwright-report
-          if-no-files-found: ignore
-      - name: Commit and push repair
-        run: |
-          git add src/content.js tests/e2e/instant-blocking.spec.mjs
-          if ! git diff --cached --quiet; then
-            git commit -m "fix: make instant blocking E2E deterministic"
-          fi
+          git rm .github/workflows/fix-pr20-ci-conflict.yml
+          git add src/background.ts src/content.js tests/e2e/instant-blocking.spec.mjs tests/runtime-regressions.test.mjs
+          git commit -m "fix: synchronize cached ad decisions immediately"
           git push origin HEAD:fix/instant-cached-ad-blocking

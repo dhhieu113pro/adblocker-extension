@@ -13,7 +13,7 @@ const IAB_IMAGE_SIZES = [
   [120, 600], [160, 600], [300, 600], [970, 90], [970, 250], [300, 100],
 ];
 
-export function shouldAnalyzeImage({ width = 0, height = 0, url = "", alt = "", parentClasses = "" } = {}) {
+function isEligibleImageSource({ url = "", alt = "", parentClasses = "" } = {}) {
   const normalizedUrl = String(url).toLowerCase();
   const normalizedAlt = String(alt).toLowerCase();
   const normalizedParentClasses = String(parentClasses).toLowerCase();
@@ -22,9 +22,13 @@ export function shouldAnalyzeImage({ width = 0, height = 0, url = "", alt = "", 
     return false;
   }
 
-  if (!normalizedUrl || normalizedUrl.startsWith("data:image/svg") || normalizedUrl.startsWith("chrome-extension://")) {
-    return false;
-  }
+  return Boolean(normalizedUrl) &&
+    !normalizedUrl.startsWith("data:image/svg") &&
+    !normalizedUrl.startsWith("chrome-extension://");
+}
+
+export function shouldAnalyzeImage({ width = 0, height = 0, url = "", alt = "", parentClasses = "" } = {}) {
+  if (!isEligibleImageSource({ url, alt, parentClasses })) return false;
 
   if (width > 0 && height > 0 && (width < 96 || height < 64 || width * height < 12000)) {
     return false;
@@ -42,7 +46,7 @@ export function shouldAutoAnalyzeImageCandidate({
   linkRel = "",
   hasCloseAdButton = false,
 } = {}) {
-  if (!shouldAnalyzeImage({ width, height, url, alt, parentClasses })) return false;
+  if (!isEligibleImageSource({ url, alt, parentClasses })) return false;
 
   if (width > 0 && height > 0) {
     const ratio = width / height;

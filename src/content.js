@@ -1,6 +1,7 @@
 // AI Vision & Heuristic Ad Blocker Content Script
 import { isHardAdNetwork, AD_CONTAINER_SELECTORS, loadRemoteAdRules } from "./shared";
 import { shouldRemoveTransparentAdOverlay } from "./transparent-ad-overlay-policy.mjs";
+import { shouldAutoAnalyzeImageCandidate, shouldBlockDetectionResult } from "./image-ad-policy.mjs";
 
 class AdBlockerOverlay {
   constructor() {
@@ -238,14 +239,11 @@ class AdBlockerOverlay {
   shouldAnalyzeImage(img) {
     const width = img.naturalWidth || img.width || 0;
     const height = img.naturalHeight || img.height || 0;
-    const url = (img.currentSrc || img.src || "").toLowerCase();
-    const alt = (img.alt || "").toLowerCase();
-    const parentClasses = img.closest("header, nav, .logo, .logo-brand, #nav")?.className?.toString().toLowerCase() || "";
-    if (alt.includes("logo") || url.includes("/logo") || parentClasses.includes("logo")) return false;
-    if (!url || url.startsWith("data:image/svg") || url.startsWith("chrome-extension://")) return false;
-    // Size is only an optimization to skip tiny UI icons. It is never ad evidence.
-    if (width > 0 && height > 0 && (width < 96 || height < 64 || width * height < 12000)) return false;
-    return true;
+    const url = img.currentSrc || img.src || "";
+    const alt = img.alt || "";
+    const parentClasses = img.closest("header, nav, .logo, .logo-brand, #nav")?.className?.toString() || "";
+    const linkRel = img.closest("a")?.getAttribute("rel") || "";
+    return shouldAutoAnalyzeImageCandidate({ width, height, url, alt, parentClasses, linkRel });
   }
 
   isAdIframeCandidate(iframe) {
@@ -361,6 +359,8 @@ class AdBlockerOverlay {
         this.processedImages.add(img);
         if (!this.autoHideAds) return;
         const imgSrc = img.currentSrc || img.src;
+        const width = img.naturalWidth || img.width || 0;
+        const height = img.naturalHeight || img.height || 0;
         if (isHardAdNetwork(imgSrc)) {
           let host = "ad network";
           try { host = new URL(imgSrc).hostname; } catch {}
@@ -385,8 +385,7 @@ class AdBlockerOverlay {
           }
           currEl = parent;
         }
-        // Deliberately do not pass width/height: image geometry is not ad evidence.
-        this.enqueueAdCheck(img, { imageUrl: imgSrc, linkUrl, linkRel, hasCloseAdButton });
+        this.enqueueAdCheck(img, { imageUrl: imgSrc, width, height, linkUrl, linkRel, hasCloseAdButton });
       };
       if (img.complete) checkAndProcess();
       else img.addEventListener("load", checkAndProcess, { once: true });
@@ -418,7 +417,7 @@ class AdBlockerOverlay {
       const imageDataUrl = await this.fetchImageDataUrl(msg.imageUrl);
       await new Promise((resolve) => {
         chrome.runtime.sendMessage({ type: "detectAd", ...msg, imageDataUrl }, (res) => {
-          if (generation === this.protectionGeneration && this.autoHideAds && !this.siteDisabled && res?.isAd && res.confidence >= 50 && img?.isConnected) { this.hideAd(img, res); this.cleanupEmptyAdContainers(); }
+          if (generation === this.protectionGeneration && this.autoHideAds && !this.siteDisabled && shouldBlockDetectionResult(res) && img?.isConnected) { this.hideAd(img, res); this.cleanupEmptyAdContainers(); }
           resolve();
         });
       });

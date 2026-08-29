@@ -39,6 +39,12 @@ test.beforeAll(async () => {
     const url = new URL(req.url, 'http://127.0.0.1');
     count(url.pathname);
 
+    if (url.pathname === '/creative.svg') {
+      res.writeHead(200, { 'content-type': 'image/svg+xml', 'cache-control': 'no-store' });
+      res.end('<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="200"><rect width="1000" height="200" fill="#ddd"/></svg>');
+      return;
+    }
+
     if (url.pathname.endsWith('.gif')) {
       res.writeHead(200, { 'content-type': 'image/gif', 'cache-control': 'no-store' });
       res.end(Buffer.from('R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==', 'base64'));
@@ -48,9 +54,7 @@ test.beforeAll(async () => {
     if (url.pathname === '/cached-page') {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
       res.end(`<!doctype html><html><body>
-        <a rel="sponsored" href="https://example.com/deal">
-          <img id="cached-ad" width="640" height="360" src="${baseUrl}/creative.gif" />
-        </a>
+        <img id="cached-ad" width="1000" height="200" src="${baseUrl}/creative.svg" />
       </body></html>`);
       return;
     }
@@ -85,7 +89,7 @@ test.beforeEach(async () => {
 });
 
 test('previously classified ads are hidden from cache without refetching pixels', async () => {
-  const imageUrl = `${baseUrl}/creative.gif`;
+  const imageUrl = `${baseUrl}/creative.svg`;
   await worker.evaluate(async ({ imageUrl }) => {
     await chrome.storage.local.set({
       webllmClipCache: {
@@ -105,10 +109,10 @@ test('previously classified ads are hidden from cache without refetching pixels'
 
   await expect.poll(async () => page.locator('#cached-ad').evaluate((el) => ({
     hidden: el.closest('[data-webllm-ad-hidden="true"]') !== null,
-    display: getComputedStyle(el.closest('a') || el).display,
+    display: getComputedStyle(el).display,
   })), { timeout: 1000 }).toEqual({ hidden: true, display: 'none' });
 
-  expect(requestCounts.get('/creative.gif')).toBe(1);
+  expect(requestCounts.get('/creative.svg')).toBe(1);
   await page.close();
 });
 

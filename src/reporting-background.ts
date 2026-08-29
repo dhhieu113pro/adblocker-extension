@@ -34,6 +34,15 @@ function reportMessage(message: any) {
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message.type === "activateFullProtectionOnTab" && Number.isInteger(message.tabId)) {
+    chrome.scripting.executeScript({
+      target: { tabId: message.tabId, allFrames: true },
+      files: ["runtime/report-bridge.js"],
+      world: "ISOLATED",
+    }).catch((error) => console.warn("[AdBlocker] Failed to activate report bridge:", error));
+    return false;
+  }
+
   if (message.type === "adBlocked") {
     reportMessage(message).catch((error) => console.warn("[AdBlocker] Failed to record report event:", error));
     return false;

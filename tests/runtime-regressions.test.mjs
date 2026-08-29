@@ -50,3 +50,16 @@ test("content script delegates transparent overlay removal to the explicit ad po
   assert.match(source, /shouldRemoveTransparentAdOverlay/);
   assert.doesNotMatch(source, /console\.warn\("\[AdBlocker\] Detected transparent clickjacking overlay/);
 });
+
+test("content script uses the restored v1.0.11 image candidate policy", () => {
+  const source = readFileSync(new URL("../src/content.js", import.meta.url), "utf8");
+  assert.match(source, /shouldAutoAnalyzeImageCandidate/);
+  assert.match(source, /imageUrl: imgSrc, width, height, linkUrl, linkRel, hasCloseAdButton/);
+  assert.match(source, /shouldBlockDetectionResult\(res\)/);
+});
+
+test("CLIP is the default vision model as in v1.0.11", () => {
+  const source = readFileSync(new URL("../src/background.ts", import.meta.url), "utf8");
+  const fallbacks = source.match(/visionModel \|\| "clip"/g) || [];
+  assert.equal(fallbacks.length, 2);
+});

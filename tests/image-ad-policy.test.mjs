@@ -97,12 +97,13 @@ test("AI image request intentionally contains no geometry fields", () => {
   });
 });
 
-test("blocking requires an ad result at or above confidence threshold", () => {
+test("automatic image hiding requires high-confidence ad detection", () => {
   assert.equal(shouldBlockDetectionResult(null), false);
   assert.equal(shouldBlockDetectionResult({ isAd: false, confidence: 99 }), false);
-  assert.equal(shouldBlockDetectionResult({ isAd: true, confidence: 49 }), false);
-  assert.equal(shouldBlockDetectionResult({ isAd: true, confidence: 50 }), true);
-  assert.equal(shouldBlockDetectionResult({ isAd: true, confidence: 79 }, 80), false);
-  assert.equal(shouldBlockDetectionResult({ isAd: true, confidence: 80 }, 80), true);
+  assert.equal(shouldBlockDetectionResult({ isAd: true, confidence: 50 }), false);
+  assert.equal(shouldBlockDetectionResult({ isAd: true, confidence: 79 }), false);
+  assert.equal(shouldBlockDetectionResult({ isAd: true, confidence: 80 }), true);
+  assert.equal(shouldBlockDetectionResult({ isAd: true, confidence: 94 }, 95), false);
+  assert.equal(shouldBlockDetectionResult({ isAd: true, confidence: 95 }, 95), true);
   assert.equal(shouldBlockDetectionResult({ isAd: true }), false);
 });

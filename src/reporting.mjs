@@ -49,9 +49,17 @@ function createDayBucket() {
   };
 }
 
+function localDayKey(timestamp) {
+  const date = new Date(Number(timestamp));
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 export function aggregateEvent(aggregates = {}, event) {
   const next = { ...aggregates };
-  const dayKey = new Date(Number(event.timestamp)).toISOString().slice(0, 10);
+  const dayKey = localDayKey(event.timestamp);
   const previous = next[dayKey] || createDayBucket();
   const bucket = {
     total: Number(previous.total) || 0,
@@ -74,13 +82,13 @@ export function aggregateEvent(aggregates = {}, event) {
   return next;
 }
 
-function startOfUtcDay(timestamp) {
+function startOfLocalDay(timestamp) {
   const date = new Date(timestamp);
-  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
 }
 
 function rangeCutoff(range, now) {
-  if (range === "today") return startOfUtcDay(now);
+  if (range === "today") return startOfLocalDay(now);
   if (range === "7d") return now - 7 * 24 * 60 * 60 * 1000;
   if (range === "30d") return now - 30 * 24 * 60 * 60 * 1000;
   return Number.NEGATIVE_INFINITY;
@@ -89,12 +97,9 @@ function rangeCutoff(range, now) {
 export function filterReportData(data = {}, range = "30d", now = Date.now()) {
   const cutoff = rangeCutoff(range, now);
   const events = (Array.isArray(data.events) ? data.events : []).filter((event) => Number(event?.timestamp) >= cutoff);
+  const cutoffDay = range === "all" ? "" : localDayKey(cutoff);
   const daily = Object.fromEntries(
-    Object.entries(data.daily || {}).filter(([day]) => {
-      if (range === "all") return true;
-      const dayTimestamp = Date.parse(`${day}T00:00:00.000Z`);
-      return Number.isFinite(dayTimestamp) && dayTimestamp >= startOfUtcDay(cutoff);
-    }),
+    Object.entries(data.daily || {}).filter(([day]) => range === "all" || day >= cutoffDay),
   );
   return { events, daily };
 }

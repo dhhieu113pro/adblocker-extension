@@ -22,7 +22,18 @@ jobs:
           git fetch origin main
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          set +e
           git merge origin/main --no-edit
+          merge_status=$?
+          set -e
+          if [ "$merge_status" -ne 0 ]; then
+            conflicts="$(git diff --name-only --diff-filter=U)"
+            echo "Conflicts: $conflicts"
+            test "$conflicts" = "tests/runtime-regressions.test.mjs"
+            git checkout --ours tests/runtime-regressions.test.mjs
+            git add tests/runtime-regressions.test.mjs
+            git commit --no-edit
+          fi
       - name: Fix declared dimensions and service-worker E2E trigger
         shell: python
         run: |

@@ -33,7 +33,7 @@ export async function registerFullProtectionScripts() {
     },
     {
       id: CONTENT_SCRIPT_ID,
-      js: ["runtime/content.js"],
+      js: ["runtime/report-bridge.js", "runtime/content.js"],
       matches: [...FULL_SITE_ORIGINS],
       runAt: "document_idle",
       allFrames: true,

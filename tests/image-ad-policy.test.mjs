@@ -16,6 +16,7 @@ test("manual image analysis still accepts normal images", () => {
 });
 
 test("automatic analysis skips ordinary editorial photos without ad context", () => {
+  assert.equal(shouldAutoAnalyzeImageCandidate(), false);
   assert.equal(shouldAutoAnalyzeImageCandidate({ width: 1200, height: 800, url: "https://media.saostar.vn/news/article-photo.jpg" }), false);
   assert.equal(shouldAutoAnalyzeImageCandidate({ width: 1200, height: 675, url: "https://cdn.site.test/hero.jpg" }), false);
   assert.equal(shouldAutoAnalyzeImageCandidate({ width: 0, height: 0, url: "https://cdn.site.test/lazy-editorial.jpg" }), false);

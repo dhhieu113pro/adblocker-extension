@@ -111,16 +111,18 @@ jobs:
           path = Path('src/background.ts')
           source = path.read_text()
           marker = 'loadClipCache();\n\n// Coalesces concurrent classify calls for the same image and writes the cache.'
-          replacement = '''loadClipCache();
-
-chrome.storage.onChanged.addListener((changes, area) => {
-  if (area !== "local" || !changes[CLIP_CACHE_KEY]) return;
-  const nextValue = changes[CLIP_CACHE_KEY].newValue || {};
-  clipCache = new Map(Object.entries(nextValue));
-  clipCacheLoaded = true;
-});
-
-// Coalesces concurrent classify calls for the same image and writes the cache.'''
+          replacement = '\n'.join([
+              'loadClipCache();',
+              '',
+              'chrome.storage.onChanged.addListener((changes, area) => {',
+              '  if (area !== "local" || !changes[CLIP_CACHE_KEY]) return;',
+              '  const nextValue = changes[CLIP_CACHE_KEY].newValue || {};',
+              '  clipCache = new Map(Object.entries(nextValue));',
+              '  clipCacheLoaded = true;',
+              '});',
+              '',
+              '// Coalesces concurrent classify calls for the same image and writes the cache.',
+          ])
           if marker not in source:
               raise SystemExit('CLIP cache insertion marker missing')
           path.write_text(source.replace(marker, replacement, 1))

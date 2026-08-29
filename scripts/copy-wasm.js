@@ -1,7 +1,8 @@
 const fs = require("fs");
 const path = require("path");
 
-const distDir = path.join(__dirname, "../dist");
+const distName = process.argv[2] || "dist";
+const distDir = path.join(__dirname, "..", distName);
 
 // 1. Clean dist/manifest.json
 const manifestPath = path.join(distDir, "manifest.json");
@@ -9,7 +10,7 @@ if (fs.existsSync(manifestPath)) {
   const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
   delete manifest.offscreen_document;
   fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
-  console.log("✓ dist/manifest.json cleaned");
+  console.log(`✓ ${distName}/manifest.json cleaned`);
 }
 
 // 2. Validate the explicitly packaged offscreen AI document.

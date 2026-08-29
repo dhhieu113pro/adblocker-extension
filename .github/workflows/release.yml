@@ -15,6 +15,7 @@ jobs:
       version: ${{ steps.release.outputs.version }}
       artifact_name: ${{ steps.release.outputs.artifact_name }}
       package_filename: ${{ steps.release.outputs.package_filename }}
+      android_crx_filename: ${{ steps.android.outputs.filename }}
 
     steps:
       - name: Checkout
@@ -38,6 +39,9 @@ jobs:
 
       - name: Build extension
         run: npm run build
+
+      - name: Build Edge Android extension
+        run: npm run build:edge-android
 
       - name: Install Playwright test runner
         run: npm install --no-save --package-lock=false @playwright/test@1.55.0
@@ -65,11 +69,50 @@ jobs:
             exit 1
           fi
 
+      - name: Restore Edge Android CRX signing key
+        shell: bash
+        env:
+          EDGE_ANDROID_CRX_PRIVATE_KEY: ${{ secrets.EDGE_ANDROID_CRX_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$EDGE_ANDROID_CRX_PRIVATE_KEY" ]]; then
+            echo "::error::Missing EDGE_ANDROID_CRX_PRIVATE_KEY secret. Store the base64-encoded PEM private key in this repository secret."
+            exit 1
+          fi
+          mkdir -p .release-secrets
+          printf '%s' "$EDGE_ANDROID_CRX_PRIVATE_KEY" | base64 --decode > .release-secrets/edge-android.pem
+          chmod 600 .release-secrets/edge-android.pem
+
+      - name: Package and validate Edge Android CRX
+        id: android
+        shell: bash
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+          EDGE_ANDROID_CRX_KEY_PATH: ${{ github.workspace }}/.release-secrets/edge-android.pem
+        run: |
+          set -euo pipefail
+          FILENAME="AI-Vision-Ad-Blocker-Edge-Android-v${VERSION}.crx"
+          echo "filename=$FILENAME" >> "$GITHUB_OUTPUT"
+          export EDGE_ANDROID_CRX_OUTPUT="${GITHUB_WORKSPACE}/release/${FILENAME}"
+          npm run package:edge-android:crx
+          test -s "$EDGE_ANDROID_CRX_OUTPUT"
+          MAGIC="$(head -c 4 "$EDGE_ANDROID_CRX_OUTPUT")"
+          if [[ "$MAGIC" != "Cr24" ]]; then
+            echo "::error::Generated Android package is not a CRX file"
+            exit 1
+          fi
+
+      - name: Remove restored signing key
+        if: always()
+        run: rm -rf .release-secrets
+
       - name: Upload unified package artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.release.outputs.artifact_name }}
-          path: release/${{ steps.release.outputs.package_filename }}
+          path: |
+            release/${{ steps.release.outputs.package_filename }}
+            release/${{ steps.android.outputs.filename }}
           if-no-files-found: error
           retention-days: 30
 
@@ -88,7 +131,9 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: release/${{ needs.build.outputs.package_filename }}
+          files: |
+            release/${{ needs.build.outputs.package_filename }}
+            release/${{ needs.build.outputs.android_crx_filename }}
           generate_release_notes: true
 
   edge-store:

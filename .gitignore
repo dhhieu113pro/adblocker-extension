@@ -4,6 +4,8 @@ jspm_packages/
 
 # Build and cache outputs
 dist/
+dist-edge-android/
+src/manifest.edge-android.json
 .parcel-cache/
 .cache/
 

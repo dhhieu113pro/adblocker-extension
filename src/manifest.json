@@ -12,11 +12,9 @@
     "declarativeNetRequest"
   ],
   "host_permissions": [
-    "https://raw.githubusercontent.com/*"
-  ],
-  "optional_host_permissions": [
     "http://*/*",
-    "https://*/*"
+    "https://*/*",
+    "https://raw.githubusercontent.com/*"
   ],
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';"

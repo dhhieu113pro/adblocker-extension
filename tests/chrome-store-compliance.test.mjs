@@ -15,13 +15,17 @@ function readJson(relativePath) {
   return JSON.parse(readText(relativePath));
 }
 
-test("Chrome Store manifest makes broad browsing access optional", () => {
+test("Chrome Store manifest grants automatic full-page browsing access", () => {
   const manifest = readJson("src/manifest.json");
 
   assert.equal(manifest.permissions.includes("activeTab"), false);
   assert.equal(manifest.permissions.includes("tabs"), false);
-  assert.deepEqual(manifest.host_permissions, ["https://raw.githubusercontent.com/*"]);
-  assert.deepEqual(manifest.optional_host_permissions, ["http://*/*", "https://*/*"]);
+  assert.deepEqual(manifest.host_permissions, [
+    "http://*/*",
+    "https://*/*",
+    "https://raw.githubusercontent.com/*",
+  ]);
+  assert.equal("optional_host_permissions" in manifest, false);
   assert.equal("content_scripts" in manifest, false);
   assert.equal("web_accessible_resources" in manifest, false);
   assert.equal(manifest.version, "1.0.13");
@@ -48,7 +52,7 @@ test("Chrome Store build packages stable runtime scripts and internal offscreen 
   assert.equal(packageLock.packages?.[""]?.version, "1.0.13");
 });
 
-test("background synchronizes optional access and runtime scripts are injection-safe", () => {
+test("background synchronizes full access and runtime scripts are injection-safe", () => {
   const background = readText("src/background.ts");
   const content = readText("src/content.js");
   const inject = readText("src/inject.ts");

@@ -57,25 +57,32 @@ test("prunes detailed events older than 30 days", () => {
   assert.equal(pruneEvents([{ timestamp: now - 29 * DAY }], now).length, 1);
 });
 
-test("aggregates by UTC day and dimensions", () => {
-  const event = {
-    timestamp: Date.UTC(2026, 7, 29),
-    pageDomain: "example.com",
-    pageCategory: "News",
-    sourceDomain: "ads.test",
-    blockType: "ad",
-    detectionMethod: "ai",
-    resourceType: "image",
-  };
-  const result = aggregateEvent({}, event);
-  const day = result["2026-08-29"];
-  assert.equal(day.total, 1);
-  assert.equal(day.sites["example.com"], 1);
-  assert.equal(day.categories.News, 1);
-  assert.equal(day.sources["ads.test"], 1);
-  assert.equal(day.blockTypes.ad, 1);
-  assert.equal(day.detectionMethods.ai, 1);
-  assert.equal(day.resourceTypes.image, 1);
+test("aggregates by local calendar day and dimensions", () => {
+  const previousTimezone = process.env.TZ;
+  process.env.TZ = "Asia/Ho_Chi_Minh";
+  try {
+    const event = {
+      timestamp: Date.UTC(2026, 7, 29, 20),
+      pageDomain: "example.com",
+      pageCategory: "News",
+      sourceDomain: "ads.test",
+      blockType: "ad",
+      detectionMethod: "ai",
+      resourceType: "image",
+    };
+    const result = aggregateEvent({}, event);
+    const day = result["2026-08-30"];
+    assert.equal(day.total, 1);
+    assert.equal(day.sites["example.com"], 1);
+    assert.equal(day.categories.News, 1);
+    assert.equal(day.sources["ads.test"], 1);
+    assert.equal(day.blockTypes.ad, 1);
+    assert.equal(day.detectionMethods.ai, 1);
+    assert.equal(day.resourceTypes.image, 1);
+  } finally {
+    if (previousTimezone === undefined) delete process.env.TZ;
+    else process.env.TZ = previousTimezone;
+  }
 });
 
 test("filters report events by supported time ranges", () => {

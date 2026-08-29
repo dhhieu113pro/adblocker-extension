@@ -392,8 +392,13 @@ class AdBlockerOverlay {
         }
         this.enqueueAdCheck(img, { imageUrl: imgSrc, width, height, linkUrl, linkRel, hasCloseAdButton });
       };
-      if (img.complete) checkAndProcess();
-      else img.addEventListener("load", checkAndProcess, { once: true });
+      // Use src + declared dimensions immediately so known ads can be hidden
+      // before their pixels finish loading. Retry after load only when the early
+      // pass did not identify this image as a candidate.
+      checkAndProcess();
+      if (!img.complete && !this.processedImages.has(img)) {
+        img.addEventListener("load", checkAndProcess, { once: true });
+      }
     });
     this.cleanupEmptyAdContainers();
   }

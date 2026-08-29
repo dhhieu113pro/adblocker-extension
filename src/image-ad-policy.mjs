@@ -13,7 +13,7 @@ const IAB_IMAGE_SIZES = [
   [120, 600], [160, 600], [300, 600], [970, 90], [970, 250], [300, 100],
 ];
 
-function isEligibleImageSource({ url = "", alt = "", parentClasses = "" } = {}) {
+function isEligibleImageSource({ url = "", alt = "", parentClasses = "" }) {
   const normalizedUrl = String(url).toLowerCase();
   const normalizedAlt = String(alt).toLowerCase();
   const normalizedParentClasses = String(parentClasses).toLowerCase();

@@ -18,6 +18,7 @@ test("manual image analysis still accepts normal images", () => {
 test("automatic analysis skips ordinary editorial photos without ad context", () => {
   assert.equal(shouldAutoAnalyzeImageCandidate({ width: 1200, height: 800, url: "https://media.saostar.vn/news/article-photo.jpg" }), false);
   assert.equal(shouldAutoAnalyzeImageCandidate({ width: 1200, height: 675, url: "https://cdn.site.test/hero.jpg" }), false);
+  assert.equal(shouldAutoAnalyzeImageCandidate({ width: 0, height: 0, url: "https://cdn.site.test/lazy-editorial.jpg" }), false);
 });
 
 test("automatic analysis restores v1.0.11 banner geometry detection", () => {
@@ -26,6 +27,7 @@ test("automatic analysis restores v1.0.11 banner geometry detection", () => {
   assert.equal(shouldAutoAnalyzeImageCandidate({ width: 320, height: 50, url: "https://cdn.site.test/creative.jpg" }), true);
   assert.equal(shouldAutoAnalyzeImageCandidate({ width: 300, height: 250, url: "https://cdn.site.test/creative.jpg" }), true);
   assert.equal(shouldAutoAnalyzeImageCandidate({ width: 1000, height: 200, url: "https://cdn.site.test/creative.jpg" }), true);
+  assert.equal(shouldAutoAnalyzeImageCandidate({ width: 120, height: 600, url: "https://cdn.site.test/creative.jpg" }), true);
 });
 
 test("automatic analysis restores v1.0.11 link and URL ad signals", () => {

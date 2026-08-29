@@ -1,6 +1,34 @@
-# 🛡️ AI Vision & Heuristic Ad Blocker
+<p align="center">
+  <img src="src/icon-128.png" width="112" alt="AI Vision Ad Blocker logo">
+</p>
 
-An intelligent, on-device Chromium extension for Google Chrome, Microsoft Edge, Brave, and compatible Chromium browsers. It blocks advertisements using a **hybrid engine** combining fast heuristics with a local **CLIP Zero-Shot Vision Transformer (ViT)** running in WebAssembly.
+<h1 align="center">🛡️ AI Vision & Heuristic Ad Blocker</h1>
+
+<p align="center">
+  An intelligent, on-device Chromium extension for Google Chrome, Microsoft Edge, Brave, and compatible Chromium browsers.
+</p>
+
+<p align="center">
+  <a href="https://microsoftedge.microsoft.com/addons/detail/oojihjhomcbmbkbhdjldojjhgpejddfm"><strong>Get it from Microsoft Edge Add-ons</strong></a>
+  ·
+  <a href="https://github.com/dhhieu113pro/adblocker-extension/releases">GitHub Releases</a>
+  ·
+  <a href="https://dhhieu113pro.github.io/adblocker-extension/">Website</a>
+</p>
+
+<p align="center">
+  <a href="https://microsoftedge.microsoft.com/addons/detail/oojihjhomcbmbkbhdjldojjhgpejddfm">
+    <img alt="Microsoft Edge Add-ons" src="https://img.shields.io/badge/Microsoft%20Edge-Get%20the%20extension-0078D7?logo=microsoftedge&logoColor=white">
+  </a>
+  <img alt="Privacy first" src="https://img.shields.io/badge/AI-100%25%20local-0f9d7a">
+  <img alt="License" src="https://img.shields.io/badge/license-MIT-blue">
+</p>
+
+<p align="center">
+  <img src="docs/assets/hero.svg" width="900" alt="AI Vision Ad Blocker product thumbnail">
+</p>
+
+The extension blocks advertisements using a **hybrid engine** combining fast heuristics with a local **CLIP Zero-Shot Vision Transformer (ViT)** running in WebAssembly.
 
 ---
 
@@ -20,6 +48,12 @@ An intelligent, on-device Chromium extension for Google Chrome, Microsoft Edge, 
 *   **JW Player Ad Handling**: Detects JW Player ad countdowns, mutes video during the countdown, automatically clicks the enabled **Skip Ad** button, and restores the previous audio state.
 *   **Clean Page Cleanup**: Auto-collapses empty container placeholders left behind by image banner ads.
 *   **100% Local & Privacy-First**: All AI inference runs locally in your browser's offscreen WebAssembly runtime—no visual data ever leaves your device.
+
+## 🖼️ Preview
+
+<p align="center">
+  <img src="docs/assets/popup-preview.svg" width="720" alt="Illustrated preview of the AI Vision Ad Blocker popup">
+</p>
 
 ---
 
@@ -75,8 +109,8 @@ The extension uses Apple/OpenAI's **CLIP** model (`Xenova/clip-vit-base-patch16-
 
 ## Install
 
+- **Microsoft Edge:** [install directly from Microsoft Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/oojihjhomcbmbkbhdjldojjhgpejddfm).
 - **Google Chrome / Brave:** download the GitHub Release ZIP or build locally and load `dist/` as an unpacked extension.
-- **Microsoft Edge:** install from Microsoft Edge Add-ons.
 - **Generic Chromium / development:** download the GitHub Release ZIP or build locally and load `dist/` as an unpacked extension.
 
 All supported Chromium browsers use the same extension package. A single `vX.Y.Z` Git tag drives the GitHub Release and Microsoft Edge publishing.

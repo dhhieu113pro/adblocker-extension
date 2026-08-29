@@ -34,9 +34,25 @@ test("automatic candidate detection considers the outbound click URL", async () 
   }), true);
 });
 
-test("content script runs a lightweight periodic scan for changed image fingerprints", () => {
+test("content script uses an adaptive lightweight safety scan", () => {
   assert.match(contentSource, /processedImageFingerprints\s*=\s*new WeakMap\(\)/);
   assert.match(contentSource, /getImageFingerprint\(img\)/);
   assert.match(contentSource, /scanChangedImages\(\)/);
-  assert.match(contentSource, /setInterval\(\(\)\s*=>\s*this\.scanChangedImages\(\),\s*1000\)/);
+  assert.match(contentSource, /safetyScanFastMs\s*=\s*1000/);
+  assert.match(contentSource, /safetyScanIdleMs\s*=\s*4000/);
+  assert.match(contentSource, /safetyScanActiveWindowMs\s*=\s*10000/);
+  assert.match(contentSource, /setupAdaptiveSafetyScan\(\)/);
+  assert.match(contentSource, /scheduleSafetyScan\(\)/);
+  assert.doesNotMatch(contentSource, /setInterval\(\(\)\s*=>\s*this\.scanChangedImages\(\),\s*1000\)/);
+});
+
+test("adaptive safety scan pauses while the page is hidden", () => {
+  assert.match(contentSource, /addEventListener\("visibilitychange"/);
+  assert.match(contentSource, /document\.hidden/);
+  assert.match(contentSource, /stopSafetyScan\(\)/);
+});
+
+test("SPA and DOM activity return the safety scan to the fast cadence", () => {
+  const activityCalls = contentSource.match(/markSafetyScanActivity\(\)/g) || [];
+  assert.ok(activityCalls.length >= 3, "navigation and DOM changes should refresh the fast safety-scan window");
 });

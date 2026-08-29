@@ -1,0 +1,256 @@
+name: Apply instant blocking fix
+
+on:
+  push:
+    branches:
+      - fix/instant-cached-ad-blocking
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/instant-cached-ad-blocking
+      - name: Apply focused production changes
+        shell: python
+        run: |
+          from pathlib import Path
+
+          content_path = Path('src/content.js')
+          content = content_path.read_text()
+
+          old = '''    this.adCheckQueue = [];
+              this.adCheckProcessing = false;
+              this.adCheckUrls = new Set();'''
+          new = '''    this.adCheckQueue = [];
+              this.adCheckWorkers = 0;
+              this.maxConcurrentAdChecks = 3;
+              this.adCheckUrls = new Set();'''
+          if old not in content:
+              raise SystemExit('content constructor pattern not found')
+          content = content.replace(old, new, 1)
+
+          old = '''    this.injectGlobalStyles();
+              await this.loadSettings();
+              await loadRemoteAdRules();
+              this.scanImages();
+              this.scanVideos();
+              this.setupMutationObserver();
+              this.initMessageListener();
+              this.setupContextMenuTracker();
+              this.setupJwAdSkipAutomation();
+              setInterval(() => this.scanClickjackingOverlays(), 1000);'''
+          new = '''    this.injectGlobalStyles();
+              await this.loadSettings();
+              this.setupMutationObserver();
+              this.initMessageListener();
+              this.setupContextMenuTracker();
+              this.setupJwAdSkipAutomation();
+              this.scanImages();
+              this.scanVideos();
+              loadRemoteAdRules().then(() => {
+                if (!this.autoHideAds || this.siteDisabled) return;
+                this.processedImages = new WeakSet();
+                this.scheduleScan();
+              });
+              setInterval(() => this.scanClickjackingOverlays(), 1000);'''
+          if old not in content:
+              raise SystemExit('content init pattern not found')
+          content = content.replace(old, new, 1)
+
+          old = '''  enqueueAdCheck(img, msg) {
+              if (!msg.imageUrl || this.allowedAds.has(msg.imageUrl) || this.adCheckUrls.has(msg.imageUrl)) return;
+              this.adCheckUrls.add(msg.imageUrl);
+              this.adCheckQueue.push({ img, msg });
+              if (!this.adCheckProcessing) this.processAdCheckQueue();
+            }
+
+            async fetchImageDataUrl(imageUrl) {
+              try {
+                const fetchRes = await new Promise((resolve) => { chrome.runtime.sendMessage({ type: "fetchImageAsBase64", url: imageUrl }, (response) => resolve(response)); });
+                return fetchRes?.base64 || "";
+              } catch (err) { console.warn("[AdBlocker] Failed to fetch image for AI classification:", err); return ""; }
+            }
+
+            async processAdCheckQueue() {
+              if (this.adCheckProcessing) return;
+              this.adCheckProcessing = true;
+              while (this.adCheckQueue.length > 0) {
+                const { img, msg } = this.adCheckQueue.shift();
+                const generation = this.protectionGeneration;
+                if (!img?.isConnected) continue;
+                const imageDataUrl = await this.fetchImageDataUrl(msg.imageUrl);
+                await new Promise((resolve) => {
+                  chrome.runtime.sendMessage({ type: "detectAd", ...msg, imageDataUrl }, (res) => {
+                    if (generation === this.protectionGeneration && this.autoHideAds && !this.siteDisabled && shouldBlockDetectionResult(res) && img?.isConnected) { this.hideAd(img, res); this.cleanupEmptyAdContainers(); }
+                    resolve();
+                  });
+                });
+                await new Promise((r) => setTimeout(r, 200));
+              }
+              this.adCheckProcessing = false;
+              this.adCheckUrls.clear();
+            }'''
+          new = '''  enqueueAdCheck(img, msg) {
+              if (!msg.imageUrl || this.allowedAds.has(msg.imageUrl) || this.adCheckUrls.has(msg.imageUrl)) return;
+              this.adCheckUrls.add(msg.imageUrl);
+              this.adCheckQueue.push({ img, msg });
+              this.processAdCheckQueue();
+            }
+
+            async fetchImageDataUrl(imageUrl) {
+              try {
+                const fetchRes = await new Promise((resolve) => { chrome.runtime.sendMessage({ type: "fetchImageAsBase64", url: imageUrl }, (response) => resolve(response)); });
+                return fetchRes?.base64 || "";
+              } catch (err) { console.warn("[AdBlocker] Failed to fetch image for AI classification:", err); return ""; }
+            }
+
+            requestAdDecision(payload) {
+              return new Promise((resolve) => {
+                chrome.runtime.sendMessage({ type: "detectAd", ...payload }, (res) => resolve(res));
+              });
+            }
+
+            processAdCheckQueue() {
+              while (this.adCheckWorkers < this.maxConcurrentAdChecks && this.adCheckQueue.length > 0) {
+                const item = this.adCheckQueue.shift();
+                this.adCheckWorkers += 1;
+                this.processAdCheck(item).finally(() => {
+                  this.adCheckWorkers -= 1;
+                  this.adCheckUrls.delete(item.msg.imageUrl);
+                  this.processAdCheckQueue();
+                });
+              }
+            }
+
+            async processAdCheck({ img, msg }) {
+              const generation = this.protectionGeneration;
+              if (!img?.isConnected) return;
+
+              const preflight = await this.requestAdDecision({ ...msg, preflightOnly: true });
+              if (generation !== this.protectionGeneration || !this.autoHideAds || this.siteDisabled || !img?.isConnected) return;
+              if (shouldBlockDetectionResult(preflight)) {
+                this.hideAd(img, preflight);
+                this.cleanupEmptyAdContainers();
+                return;
+              }
+              if (!preflight?.needsImageData) return;
+
+              const imageDataUrl = await this.fetchImageDataUrl(msg.imageUrl);
+              if (!imageDataUrl || generation !== this.protectionGeneration || !this.autoHideAds || this.siteDisabled || !img?.isConnected) return;
+
+              const result = await this.requestAdDecision({ ...msg, imageDataUrl });
+              if (generation === this.protectionGeneration && this.autoHideAds && !this.siteDisabled && shouldBlockDetectionResult(result) && img?.isConnected) {
+                this.hideAd(img, result);
+                this.cleanupEmptyAdContainers();
+              }
+            }'''
+          if old not in content:
+              raise SystemExit('content queue pattern not found')
+          content = content.replace(old, new, 1)
+          content_path.write_text(content)
+
+          background_path = Path('src/background.ts')
+          background = background_path.read_text()
+          old = '''        if (heuristics.confidence >= 60 && !message.forceAI) {
+                  sendResponse({
+                    success: true,
+                    isAd: true,
+                    confidence: heuristics.confidence,
+                    method: "Heuristic Rules Engine",
+                    reasons: heuristics.reasons,
+                  });
+                  return;
+                }
+
+                if (message.imageDataUrl) {
+                          // #3 - Serve from cache before touching the ~350MB CLIP model
+                          const cached = selectedModel === "clip" ? getCachedClip(message.imageUrl) : undefined;
+                          if (cached) {
+                            sendResponse({
+                              success: true,
+                              isAd: cached.isAd,
+                              confidence: cached.aiConfidence,
+                              method: "CLIP Cache",
+                              reasons: [
+                                `AI Classification (cached): "${cached.label}" (${cached.aiConfidence}%)`,
+                                ...heuristics.reasons,
+                              ],
+                            });
+                            return;
+                          }
+
+                          await ensureOffscreenDocument();'''
+          new = '''        if (heuristics.confidence >= 60 && !message.forceAI) {
+                  sendResponse({
+                    success: true,
+                    isAd: true,
+                    confidence: heuristics.confidence,
+                    method: "Heuristic Rules Engine",
+                    reasons: heuristics.reasons,
+                  });
+                  return;
+                }
+
+                // Serve persisted CLIP decisions before the content script downloads pixels.
+                const cached = selectedModel === "clip" ? getCachedClip(message.imageUrl) : undefined;
+                if (cached && !message.forceAI) {
+                  sendResponse({
+                    success: true,
+                    isAd: cached.isAd,
+                    confidence: cached.aiConfidence,
+                    method: "CLIP Cache",
+                    reasons: [
+                      `AI Classification (cached): "${cached.label}" (${cached.aiConfidence}%)`,
+                      ...heuristics.reasons,
+                    ],
+                  });
+                  return;
+                }
+
+                if (message.preflightOnly && !message.forceAI) {
+                  sendResponse({
+                    success: true,
+                    isAd: heuristics.isAd,
+                    confidence: heuristics.confidence,
+                    method: "Heuristic preflight",
+                    reasons: heuristics.reasons.length > 0 ? heuristics.reasons : ["Needs visual classification"],
+                    needsImageData: true,
+                  });
+                  return;
+                }
+
+                if (message.imageDataUrl) {
+                          await ensureOffscreenDocument();'''
+          if old not in background:
+              raise SystemExit('background detection pattern not found')
+          background = background.replace(old, new, 1)
+          background_path.write_text(background)
+
+          access_path = Path('src/site-access.ts')
+          access = access_path.read_text()
+          marker = '''      id: CONTENT_SCRIPT_ID,
+                js: ["runtime/content.js"],
+                matches: [...FULL_SITE_ORIGINS],
+                runAt: "document_idle",'''
+          replacement = '''      id: CONTENT_SCRIPT_ID,
+                js: ["runtime/content.js"],
+                matches: [...FULL_SITE_ORIGINS],
+                runAt: "document_start",'''
+          if marker not in access:
+              raise SystemExit('site-access content registration pattern not found')
+          access_path.write_text(access.replace(marker, replacement, 1))
+      - name: Verify focused tests
+        run: npm ci && npm run test:coverage
+      - name: Commit implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/content.js src/background.ts src/site-access.ts
+          git commit -m "fix: block cached and heuristic ads without delay"
+          git push origin HEAD:fix/instant-cached-ad-blocking

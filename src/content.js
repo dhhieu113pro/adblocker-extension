@@ -20,6 +20,11 @@ class AdBlockerOverlay {
     this.adCheckUrls = new Set();
     this.protectionGeneration = 0;
     this.scanTimer = null;
+    this.safetyScanTimer = null;
+    this.lastSafetyScanActivityAt = Date.now();
+    this.safetyScanFastMs = 1000;
+    this.safetyScanIdleMs = 4000;
+    this.safetyScanActiveWindowMs = 10000;
     this.jwMutedVideos = new Map();
     this.jwSkipTimer = null;
     this.jwClickedButtons = new WeakSet();
@@ -41,9 +46,10 @@ class AdBlockerOverlay {
       this.processedImages = new WeakSet();
       this.processedImageUrls = new WeakMap();
       this.processedImageFingerprints = new WeakMap();
+      this.markSafetyScanActivity();
       this.scheduleScan();
     });
-    setInterval(() => this.scanChangedImages(), 1000);
+    this.setupAdaptiveSafetyScan();
     setInterval(() => this.scanClickjackingOverlays(), 1000);
   }
 
@@ -74,6 +80,7 @@ class AdBlockerOverlay {
           this.processedImages = new WeakSet();
           this.processedImageUrls = new WeakMap();
           this.processedImageFingerprints = new WeakMap();
+          this.markSafetyScanActivity();
           this.scheduleScan();
         } else {
           this.disableSiteBlocking();
@@ -83,7 +90,7 @@ class AdBlockerOverlay {
         const disabled = (changes.disabledSites.newValue || []).includes(window.location.hostname.toLowerCase());
         this.siteDisabled = disabled;
         if (disabled) this.disableSiteBlocking();
-        else { this.processedImages = new WeakSet(); this.processedImageUrls = new WeakMap(); this.processedImageFingerprints = new WeakMap(); this.scheduleScan(); }
+        else { this.processedImages = new WeakSet(); this.processedImageUrls = new WeakMap(); this.processedImageFingerprints = new WeakMap(); this.markSafetyScanActivity(); this.scheduleScan(); }
       }
       if (area === "sync" && changes.allowedAds) this.allowedAds = new Set(changes.allowedAds.newValue || []);
     });
@@ -91,6 +98,7 @@ class AdBlockerOverlay {
 
   disableSiteBlocking() {
     this.protectionGeneration += 1;
+    this.stopSafetyScan();
     this.restoreJwMutedVideos();
     document.querySelectorAll('[data-webllm-ad-hidden="true"]').forEach((element) => this.unhideElement(element));
     this.detectedAdsMap.clear();
@@ -107,6 +115,44 @@ class AdBlockerOverlay {
       this.scanTimer = null;
       if (this.autoHideAds && !this.siteDisabled) { this.scanImages(); this.scanVideos(); }
     }, 150);
+  }
+
+  stopSafetyScan() {
+    if (!this.safetyScanTimer) return;
+    clearTimeout(this.safetyScanTimer);
+    this.safetyScanTimer = null;
+  }
+
+  markSafetyScanActivity() {
+    this.lastSafetyScanActivityAt = Date.now();
+    if (!document.hidden && this.autoHideAds && !this.siteDisabled) this.scheduleSafetyScan(this.safetyScanFastMs);
+  }
+
+  getSafetyScanDelay() {
+    const recentlyActive = Date.now() - this.lastSafetyScanActivityAt <= this.safetyScanActiveWindowMs;
+    return recentlyActive ? this.safetyScanFastMs : this.safetyScanIdleMs;
+  }
+
+  scheduleSafetyScan(delay = this.getSafetyScanDelay()) {
+    this.stopSafetyScan();
+    if (document.hidden || !this.autoHideAds || this.siteDisabled) return;
+    this.safetyScanTimer = setTimeout(() => {
+      this.safetyScanTimer = null;
+      if (!document.hidden && this.autoHideAds && !this.siteDisabled) this.scanChangedImages();
+      this.scheduleSafetyScan();
+    }, delay);
+  }
+
+  setupAdaptiveSafetyScan() {
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) {
+        this.stopSafetyScan();
+        return;
+      }
+      this.markSafetyScanActivity();
+      this.scanChangedImages();
+    });
+    this.markSafetyScanActivity();
   }
 
   restoreJwMutedVideos() {
@@ -169,6 +215,7 @@ class AdBlockerOverlay {
             this.processedImages = new WeakSet();
             this.processedImageUrls = new WeakMap();
             this.processedImageFingerprints = new WeakMap();
+            this.markSafetyScanActivity();
             this.scheduleScan();
           }
           sendResponse({ success: true, enabled: !this.siteDisabled });
@@ -231,6 +278,7 @@ class AdBlockerOverlay {
     this.processedImages = new WeakSet();
     this.processedImageUrls = new WeakMap();
     this.processedImageFingerprints = new WeakMap();
+    this.markSafetyScanActivity();
     if (!this.autoHideAds || this.siteDisabled) return;
     this.scanImages();
     this.scanVideos();
@@ -267,6 +315,7 @@ class AdBlockerOverlay {
           if (target.dataset?.webllmAdHidden === "true" && (target.style.display !== "none" || target.style.visibility !== "hidden")) this.hideElement(target);
         }
       }
+      if (hasNewNodes || hasImageCandidateChange) this.markSafetyScanActivity();
       if (hasNewNodes) this.scanClickjackingOverlays();
       if (hasNewNodes) this.scanKnownAdSlots();
       if (hasImageCandidateChange) this.scanImages();

@@ -55,6 +55,26 @@ test("records normalized events and daily aggregates", async () => {
   assert.equal(JSON.stringify(storage.data).includes("secret"), false);
 });
 
+test("deduplicates repeated identical AI detections from the same page", async () => {
+  const now = Date.UTC(2026, 7, 29, 12);
+  const storage = createStorage();
+  const store = createReportStore(storage);
+  const event = {
+    pageUrl: "https://gamek.vn/",
+    sourceUrl: "https://cdn.gamek.vn/banner.jpg",
+    blockType: "ad",
+    detectionMethod: "ai",
+    resourceType: "image",
+  };
+
+  await store.record(event, now);
+  await store.record(event, now + 100);
+  await store.record(event, now + 500);
+
+  assert.equal(storage.data[REPORT_EVENTS_KEY].length, 1);
+  assert.equal(storage.data[REPORT_DAILY_KEY]["2026-08-29"].total, 1);
+});
+
 test("serializes concurrent writes without losing counts", async () => {
   const now = Date.UTC(2026, 7, 29, 12);
   const storage = createStorage();

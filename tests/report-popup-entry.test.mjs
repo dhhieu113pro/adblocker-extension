@@ -19,3 +19,10 @@ test("overview exposes an accessible protection-mix donut", () => {
   assert.match(popup, /id=["']protection-mix-trackers["']/);
   assert.match(popup, /id=["']protection-mix-popups["']/);
 });
+
+test("overview protection mix exposes weekly, monthly, yearly, and all ranges", () => {
+  assert.match(popup, /data-mix-range=["']7d["'][^>]*aria-pressed=["']true["'][^>]*>\s*Weekly\s*</);
+  assert.match(popup, /data-mix-range=["']30d["'][^>]*>\s*Monthly\s*</);
+  assert.match(popup, /data-mix-range=["']365d["'][^>]*>\s*Yearly\s*</);
+  assert.match(popup, /data-mix-range=["']all["'][^>]*>\s*All\s*</);
+});

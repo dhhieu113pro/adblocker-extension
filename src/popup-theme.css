@@ -1,0 +1,74 @@
+:root,
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --color-canvas: #0a1018;
+  --color-surface: #101823;
+  --color-surface-strong: #15202d;
+  --color-surface-hover: #1a2737;
+  --color-ink: #f4f7fb;
+  --color-ink-2: #b8c5d5;
+  --color-muted: #8d9eb3;
+  --color-rule: #27364a;
+  --color-rule-strong: #3a4d65;
+  --color-accent: #329ee8;
+  --color-accent-ink: #06131d;
+  --color-focus: #8ad0ff;
+  --color-success: #38d39f;
+  --color-success-soft: #102d24;
+  --color-danger: #fb7185;
+  --color-danger-soft: #351820;
+  --color-disabled: #68778a;
+  --color-toggle-off: #2a384b;
+  --color-knob: #ffffff;
+  --color-shadow: #05090f;
+}
+
+html[data-theme="light"] {
+  color-scheme: light;
+  --color-canvas: #f6f8fb;
+  --color-surface: #ffffff;
+  --color-surface-strong: #edf2f7;
+  --color-surface-hover: #e5edf5;
+  --color-ink: #172235;
+  --color-ink-2: #35465d;
+  --color-muted: #68788d;
+  --color-rule: #d8e1eb;
+  --color-rule-strong: #b9c7d7;
+  --color-accent: #1678c2;
+  --color-accent-ink: #ffffff;
+  --color-focus: #075f9d;
+  --color-success: #16805c;
+  --color-success-soft: #e8f6f0;
+  --color-danger: #c43f57;
+  --color-danger-soft: #fff0f2;
+  --color-disabled: #8c9caf;
+  --color-toggle-off: #c8d3df;
+  --color-knob: #ffffff;
+  --color-shadow: #b7c3d1;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    color-scheme: light;
+    --color-canvas: #f6f8fb;
+    --color-surface: #ffffff;
+    --color-surface-strong: #edf2f7;
+    --color-surface-hover: #e5edf5;
+    --color-ink: #172235;
+    --color-ink-2: #35465d;
+    --color-muted: #68788d;
+    --color-rule: #d8e1eb;
+    --color-rule-strong: #b9c7d7;
+    --color-accent: #1678c2;
+    --color-accent-ink: #ffffff;
+    --color-focus: #075f9d;
+    --color-success: #16805c;
+    --color-success-soft: #e8f6f0;
+    --color-danger: #c43f57;
+    --color-danger-soft: #fff0f2;
+    --color-disabled: #8c9caf;
+    --color-toggle-off: #c8d3df;
+    --color-knob: #ffffff;
+    --color-shadow: #b7c3d1;
+  }
+}

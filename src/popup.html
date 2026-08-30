@@ -6,6 +6,8 @@
   <title>AI Vision Ad Blocker</title>
   <link rel="stylesheet" href="popup.css" />
   <link rel="stylesheet" href="popup-scrollbar.css" />
+  <link rel="stylesheet" href="popup-theme.css" />
+  <script src="popup-theme.ts" type="module"></script>
 </head>
 <body>
   <main class="popup-shell">
@@ -94,6 +96,18 @@
             <input type="checkbox" id="auto-hide-toggle" checked aria-label="Automatic protection" />
             <span class="toggle-slider"></span>
           </label>
+        </div>
+
+        <div class="setting-row setting-stack">
+          <label class="setting-copy" for="theme-mode-select">
+            <strong>Theme</strong>
+            <span>Follow your browser and system appearance, or choose a fixed theme.</span>
+          </label>
+          <select id="theme-mode-select" class="model-select" aria-label="Theme">
+            <option value="system">System · Recommended</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
         </div>
 
         <div class="setting-row setting-stack">

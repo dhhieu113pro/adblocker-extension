@@ -1,3 +1,11 @@
+export const DEFAULT_PROTECTION_MIX_RANGE = "7d";
+export const PROTECTION_MIX_RANGES = [
+  { label: "Weekly", value: "7d" },
+  { label: "Monthly", value: "30d" },
+  { label: "Yearly", value: "365d" },
+  { label: "All", value: "all" },
+];
+
 function count(value) {
   const parsed = Number(value) || 0;
   return Math.max(0, parsed);

@@ -93,13 +93,16 @@ test("filters report events by supported time ranges", () => {
       { timestamp: now - 5 * DAY },
       { timestamp: now - 20 * DAY },
       { timestamp: now - 60 * DAY },
+      { timestamp: now - 200 * DAY },
+      { timestamp: now - 400 * DAY },
     ],
     daily: {},
   };
   assert.equal(filterReportData(data, "today", now).events.length, 1);
   assert.equal(filterReportData(data, "7d", now).events.length, 2);
   assert.equal(filterReportData(data, "30d", now).events.length, 3);
-  assert.equal(filterReportData(data, "all", now).events.length, 4);
+  assert.equal(filterReportData(data, "365d", now).events.length, 5);
+  assert.equal(filterReportData(data, "all", now).events.length, 6);
 });
 
 test("exports stable CSV and JSON shapes", () => {

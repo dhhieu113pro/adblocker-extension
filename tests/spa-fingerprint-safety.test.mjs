@@ -56,3 +56,10 @@ test("SPA and DOM activity return the safety scan to the fast cadence", () => {
   const activityCalls = contentSource.match(/markSafetyScanActivity\(\)/g) || [];
   assert.ok(activityCalls.length >= 3, "navigation and DOM changes should refresh the fast safety-scan window");
 });
+
+test("SPA activity does not postpone an already imminent safety scan", () => {
+  const activityMethod = contentSource.match(/markSafetyScanActivity\(\)\s*\{([\s\S]*?)\n\s*\}/)?.[1] || "";
+  assert.match(activityMethod, /lastSafetyScanActivityAt\s*=\s*Date\.now\(\)/);
+  assert.match(activityMethod, /!this\.safetyScanTimer/);
+  assert.doesNotMatch(activityMethod, /this\.stopSafetyScan\(\)/);
+});

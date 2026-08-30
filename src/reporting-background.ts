@@ -1,10 +1,13 @@
 import "./background";
+import { createPageDetectionState } from "./page-detection-state.mjs";
 import {
   clearReportData,
   exportReportData,
   readReportData,
   recordReportEvent,
 } from "./reporting-storage";
+
+const tabPageDetections = new Map<number, any>();
 
 function normalizeDetectionMethod(method: unknown) {
   const value = String(method || "").toLowerCase();
@@ -33,7 +36,48 @@ function reportMessage(message: any) {
   });
 }
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+function getTabPageDetectionState(tabId: number, pageUrl = "") {
+  let state = tabPageDetections.get(tabId);
+  if (!state) {
+    state = createPageDetectionState(pageUrl);
+    tabPageDetections.set(tabId, state);
+  } else if (pageUrl) {
+    state.navigate(pageUrl);
+  }
+  return state;
+}
+
+function recordTabPageDetection(message: any, sender: chrome.runtime.MessageSender) {
+  const tabId = sender.tab?.id;
+  if (tabId === undefined) return;
+
+  const pageUrl = message.pageUrl || sender.tab?.url || "";
+  const state = getTabPageDetectionState(tabId, pageUrl);
+  const url = message.adUrl || message.sourceUrl || message.blockedTargetUrl || "";
+  state.record({
+    id: url || `${message.adDomain || "blocked"}:${state.count() + 1}`,
+    url,
+    domain: message.adDomain || "",
+    method: message.detectionMethod || message.method || "Blocked by protection",
+    isHidden: true,
+    canToggle: false,
+  });
+}
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  const state = tabPageDetections.get(tabId);
+  if (!state) return;
+
+  const nextUrl = changeInfo.url || tab.url || "";
+  if (changeInfo.status === "loading") state.reset(nextUrl);
+  else if (changeInfo.url) state.navigate(nextUrl);
+});
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  tabPageDetections.delete(tabId);
+});
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "activateFullProtectionOnTab" && Number.isInteger(message.tabId)) {
     chrome.scripting.executeScript({
       target: { tabId: message.tabId, allFrames: true },
@@ -44,15 +88,23 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message.type === "adBlocked") {
+    recordTabPageDetection(message, sender);
     reportMessage(message).catch((error) => console.warn("[AdBlocker] Failed to record report event:", error));
     return false;
   }
 
   if (message.type === "protectionBlocked") {
+    recordTabPageDetection(message, sender);
     reportMessage(message)
       .then(() => sendResponse({ success: true }))
       .catch((error) => sendResponse({ success: false, error: String(error) }));
     return true;
+  }
+
+  if (message.type === "getTabDetectionState" && Number.isInteger(message.tabId)) {
+    const state = getTabPageDetectionState(message.tabId, message.pageUrl || "");
+    sendResponse({ success: true, count: state.count(), ads: state.list() });
+    return false;
   }
 
   if (message.type === "getReportData") {

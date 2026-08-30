@@ -91,6 +91,7 @@ function rangeCutoff(range, now) {
   if (range === "today") return startOfLocalDay(now);
   if (range === "7d") return now - 7 * 24 * 60 * 60 * 1000;
   if (range === "30d") return now - 30 * 24 * 60 * 60 * 1000;
+  if (range === "365d") return now - 365 * 24 * 60 * 60 * 1000;
   return Number.NEGATIVE_INFINITY;
 }
 

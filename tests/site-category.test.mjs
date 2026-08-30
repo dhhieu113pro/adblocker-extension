@@ -28,6 +28,16 @@ test("uses heuristic metadata for unknown shopping sites", () => {
   assert.ok(result.confidence > 0);
 });
 
+test("classifies Vietnamese betting and casino metadata as Gambling/Betting", () => {
+  const result = classifySite({
+    domain: "lu88.app",
+    metadata: "Lu88 Nhà Cái Cá Cược Bóng Đá casino trực tuyến đặt cược thể thao nổ hũ",
+  });
+  assert.equal(result.category, "Gambling/Betting");
+  assert.equal(result.source, "heuristic");
+  assert.ok(result.confidence > 0);
+});
+
 test("falls back to Other without a meaningful category signal", () => {
   assert.deepEqual(classifySite({ domain: "unknown-example.test" }), {
     category: "Other",

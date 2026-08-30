@@ -553,7 +553,7 @@ function isStreamingOrAdProneSite(urlStr: string, tabId?: number): boolean {
   if (isLocalDevelopmentUrl(urlStr)) return false;
   if (tabId !== undefined) {
     const data = tabCategories.get(tabId);
-    if (data && (data.category === "Movie Streaming" || data.category === "Comic/Manga")) {
+    if (data && (data.category === "Movie Streaming" || data.category === "Comic/Manga" || data.category === "Gambling/Betting")) {
       return true;
     }
   }
@@ -762,7 +762,8 @@ chrome.webNavigation.onCompleted.addListener((details) => {
             let category = cachedCategory?.category || "General Site";
             let finalConfidence = cachedCategory?.confidence || confidence;
             if (!cachedCategory) {
-            if (topMatch.label.includes("streaming")) category = "Movie Streaming";
+            if (topMatch.label.includes("betting") || topMatch.label.includes("casino") || topMatch.label.includes("gambling")) category = "Gambling/Betting";
+            else if (topMatch.label.includes("streaming")) category = "Movie Streaming";
             else if (topMatch.label.includes("manga") || topMatch.label.includes("comic")) category = "Comic/Manga";
             else if (topMatch.label.includes("news")) category = "News/Articles";
             else if (topMatch.label.includes("programming")) category = "Developer Page";

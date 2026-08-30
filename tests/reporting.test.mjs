@@ -17,7 +17,7 @@ const DAY = 86_400_000;
 test("uses versioned storage keys", () => {
   assert.equal(REPORT_EVENTS_KEY, "reportEventsV1");
   assert.equal(REPORT_DAILY_KEY, "reportDailyV1");
-  assert.equal(REPORT_CATEGORY_CACHE_KEY, "reportCategoryCacheV1");
+  assert.equal(REPORT_CATEGORY_CACHE_KEY, "reportCategoryCacheV2");
 });
 
 test("report events persist domains rather than full URLs", () => {

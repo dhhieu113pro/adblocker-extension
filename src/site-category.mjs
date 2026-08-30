@@ -18,6 +18,11 @@ const HEURISTIC_SIGNALS = [
   ["Video/Streaming", ["stream", "streaming", "video", "movie", "movies", "watch", "anime"]],
   ["News", ["news", "article", "articles", "headline", "journal"]],
   ["Social", ["social", "community", "forum", "profile", "follow"]],
+  ["Gambling/Betting", [
+    "gambling", "betting", "sportsbook", "sports betting", "online casino", "casino",
+    "bookmaker", "nhà cái", "nha cai", "cá cược", "ca cuoc", "đặt cược", "dat cuoc",
+    "nổ hũ", "no hu", "xổ số", "xo so", "slot game", "slot games",
+  ]],
   ["Gaming", ["game", "gaming", "games", "esports"]],
   ["Technology", ["developer", "technology", "tech", "software", "code", "programming"]],
   ["Search", ["search", "results"]],

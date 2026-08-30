@@ -13,24 +13,20 @@ import { classifySite, normalizeDomain } from "./site-category.mjs";
 
 const DUPLICATE_EVENT_WINDOW_MS = 1_000;
 
-function isDuplicateEvent(events, event) {
-  const previous = Array.isArray(events) ? events.at(-1) : null;
-  if (!previous) return false;
-
-  const elapsed = Number(event.timestamp) - Number(previous.timestamp);
-  if (elapsed < 0 || elapsed > DUPLICATE_EVENT_WINDOW_MS) return false;
-
-  return previous.pageDomain === event.pageDomain
-    && previous.pageCategory === event.pageCategory
-    && previous.sourceDomain === event.sourceDomain
-    && previous.blockType === event.blockType
-    && previous.detectionMethod === event.detectionMethod
-    && previous.resourceType === event.resourceType
-    && previous.blockedTargetDomain === event.blockedTargetDomain;
+function duplicateSignature(input, event) {
+  return JSON.stringify([
+    String(input.pageUrl || input.pageDomain || ""),
+    String(input.sourceUrl || input.adUrl || input.blockedTargetUrl || ""),
+    String(input.blockedTargetUrl || ""),
+    event.blockType,
+    event.detectionMethod,
+    event.resourceType,
+  ]);
 }
 
 export function createReportStore(storage = chrome.storage.local) {
   let writeChain = Promise.resolve();
+  const recentEventSignatures = new Map();
 
   async function load(keys) {
     return storage.get(keys);
@@ -68,9 +64,14 @@ export function createReportStore(storage = chrome.storage.local) {
         timestamp: Number.isFinite(Number(input.timestamp)) ? Number(input.timestamp) : now,
       }, now);
 
-      const storedEvents = current[REPORT_EVENTS_KEY] || [];
-      if (isDuplicateEvent(storedEvents, event)) return storedEvents.at(-1);
+      const signature = duplicateSignature(input, event);
+      const previousTimestamp = recentEventSignatures.get(signature);
+      const elapsed = Number(event.timestamp) - Number(previousTimestamp);
+      if (Number.isFinite(previousTimestamp) && elapsed >= 0 && elapsed <= DUPLICATE_EVENT_WINDOW_MS) {
+        return event;
+      }
 
+      const storedEvents = current[REPORT_EVENTS_KEY] || [];
       const events = pruneEvents([...storedEvents, event], now);
       const daily = aggregateEvent(current[REPORT_DAILY_KEY] || {}, event);
 
@@ -79,6 +80,12 @@ export function createReportStore(storage = chrome.storage.local) {
         [REPORT_DAILY_KEY]: daily,
         [REPORT_CATEGORY_CACHE_KEY]: categoryCache,
       });
+
+      recentEventSignatures.set(signature, Number(event.timestamp));
+      const cutoff = Number(event.timestamp) - DUPLICATE_EVENT_WINDOW_MS;
+      for (const [key, timestamp] of recentEventSignatures) {
+        if (Number(timestamp) < cutoff) recentEventSignatures.delete(key);
+      }
 
       return event;
     });
@@ -105,6 +112,7 @@ export function createReportStore(storage = chrome.storage.local) {
   }
 
   function clear() {
+    recentEventSignatures.clear();
     return enqueueWrite(() => storage.remove([
       REPORT_EVENTS_KEY,
       REPORT_DAILY_KEY,

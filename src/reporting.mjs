@@ -2,7 +2,7 @@ import { normalizeDomain } from "./site-category.mjs";
 
 export const REPORT_EVENTS_KEY = "reportEventsV1";
 export const REPORT_DAILY_KEY = "reportDailyV1";
-export const REPORT_CATEGORY_CACHE_KEY = "reportCategoryCacheV1";
+export const REPORT_CATEGORY_CACHE_KEY = "reportCategoryCacheV2";
 
 const DETAIL_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 const BLOCK_TYPES = new Set(["ad", "tracker", "popup"]);

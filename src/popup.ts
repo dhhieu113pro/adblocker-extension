@@ -26,6 +26,7 @@ document.addEventListener("DOMContentLoaded", () => {
   let fullSiteAccess = false;
   let currentSiteKey = "";
   let currentSiteSupported = false;
+  let pageDetectionCount = 0;
 
   versionLabel.textContent = `v${chrome.runtime.getManifest().version}`;
 
@@ -188,6 +189,7 @@ document.addEventListener("DOMContentLoaded", () => {
       aiCategoryText.textContent = "General";
       aiCategoryText.title = "";
       updateProtectionState();
+      pageDetectionCount = 0;
       renderAds([]);
       return;
     }
@@ -301,6 +303,18 @@ document.addEventListener("DOMContentLoaded", () => {
     return `${Math.round(hours / 24)}d`;
   }
 
+  function detectionKey(ad: any) {
+    if (ad?.url) return `url:${ad.url}`;
+    return `fallback:${ad?.domain || ""}|${ad?.method || ""}|${ad?.width || 0}x${ad?.height || 0}`;
+  }
+
+  function mergePageDetections(contentAds: any[] = [], recordedAds: any[] = []) {
+    const merged = new Map<string, any>();
+    recordedAds.forEach((ad) => merged.set(detectionKey(ad), { ...ad, canToggle: false }));
+    contentAds.forEach((ad) => merged.set(detectionKey(ad), { ...ad, canToggle: true }));
+    return Array.from(merged.values());
+  }
+
   function loadTabAds() {
     if (!fullSiteAccess) {
       renderAccessRequiredState();
@@ -311,12 +325,20 @@ document.addEventListener("DOMContentLoaded", () => {
       const activeTab = tabs[0];
       if (!activeTab?.id) return;
 
-      chrome.tabs.sendMessage(activeTab.id, { type: "getTabDetectedAds" }, (res) => {
-        if (chrome.runtime.lastError || !res?.success) {
-          renderAds([]);
-          return;
-        }
-        renderAds(res.ads || []);
+      chrome.runtime.sendMessage({
+        type: "getTabDetectionState",
+        tabId: activeTab.id,
+        pageUrl: activeTab.url || "",
+      }, (pageState) => {
+        const pageStateAvailable = !chrome.runtime.lastError && pageState?.success;
+        const recordedAds = pageStateAvailable ? pageState.ads || [] : [];
+        pageDetectionCount = pageStateAvailable ? Number(pageState.count) || 0 : 0;
+
+        chrome.tabs.sendMessage(activeTab.id, { type: "getTabDetectedAds" }, (res) => {
+          const contentStateAvailable = !chrome.runtime.lastError && res?.success;
+          const contentAds = contentStateAvailable ? res.ads || [] : [];
+          renderAds(mergePageDetections(contentAds, recordedAds));
+        });
       });
     });
   }
@@ -334,6 +356,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function renderAccessRequiredState() {
+    pageDetectionCount = 0;
     adCountBadge.textContent = "0";
     adCountSummary.textContent = "0";
     setEmptyAdsState(
@@ -343,11 +366,19 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function renderAds(ads: any[]) {
-    adCountBadge.textContent = String(ads.length);
-    adCountSummary.textContent = String(ads.length);
+    const detectedCount = Math.max(pageDetectionCount, ads.length);
+    adCountBadge.textContent = String(detectedCount);
+    adCountSummary.textContent = String(detectedCount);
 
     if (ads.length === 0) {
-      setEmptyAdsState("Nothing suspicious found", "This page looks clean so far.");
+      if (detectedCount > 0) {
+        setEmptyAdsState(
+          `${detectedCount} ad${detectedCount === 1 ? "" : "s"} blocked`,
+          "Protection removed them before they could be reviewed.",
+        );
+      } else {
+        setEmptyAdsState("Nothing suspicious found", "This page looks clean so far.");
+      }
       return;
     }
 
@@ -368,10 +399,19 @@ document.addEventListener("DOMContentLoaded", () => {
       const meta = document.createElement("span");
       meta.className = "ad-meta";
       const dimensions = ad.width && ad.height ? ` · ${ad.width}×${ad.height}` : "";
-      meta.textContent = `${ad.confidence || 0}% confidence${dimensions}`;
+      const confidence = Number(ad.confidence) || 0;
+      meta.textContent = confidence > 0
+        ? `${confidence}% confidence${dimensions}`
+        : `${ad.method || "Blocked by protection"}${dimensions}`;
       meta.title = ad.method || "Ad detection";
 
       info.append(domain, meta);
+
+      if (ad.canToggle === false) {
+        item.append(info);
+        adListContainer.appendChild(item);
+        return;
+      }
 
       const toggleBtn = document.createElement("button");
       toggleBtn.type = "button";

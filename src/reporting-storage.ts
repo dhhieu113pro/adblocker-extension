@@ -11,6 +11,24 @@ import {
 } from "./reporting.mjs";
 import { classifySite, normalizeDomain } from "./site-category.mjs";
 
+const DUPLICATE_EVENT_WINDOW_MS = 1_000;
+
+function isDuplicateEvent(events, event) {
+  const previous = Array.isArray(events) ? events.at(-1) : null;
+  if (!previous) return false;
+
+  const elapsed = Number(event.timestamp) - Number(previous.timestamp);
+  if (elapsed < 0 || elapsed > DUPLICATE_EVENT_WINDOW_MS) return false;
+
+  return previous.pageDomain === event.pageDomain
+    && previous.pageCategory === event.pageCategory
+    && previous.sourceDomain === event.sourceDomain
+    && previous.blockType === event.blockType
+    && previous.detectionMethod === event.detectionMethod
+    && previous.resourceType === event.resourceType
+    && previous.blockedTargetDomain === event.blockedTargetDomain;
+}
+
 export function createReportStore(storage = chrome.storage.local) {
   let writeChain = Promise.resolve();
 
@@ -50,7 +68,10 @@ export function createReportStore(storage = chrome.storage.local) {
         timestamp: Number.isFinite(Number(input.timestamp)) ? Number(input.timestamp) : now,
       }, now);
 
-      const events = pruneEvents([...(current[REPORT_EVENTS_KEY] || []), event], now);
+      const storedEvents = current[REPORT_EVENTS_KEY] || [];
+      if (isDuplicateEvent(storedEvents, event)) return storedEvents.at(-1);
+
+      const events = pruneEvents([...storedEvents, event], now);
       const daily = aggregateEvent(current[REPORT_DAILY_KEY] || {}, event);
 
       await storage.set({

@@ -66,7 +66,12 @@
       <section class="overview-mix" aria-labelledby="protection-mix-heading">
         <header class="overview-mix-heading">
           <h2 id="protection-mix-heading">Protection mix</h2>
-          <span>All-time local report</span>
+          <div class="protection-mix-ranges" role="group" aria-label="Protection mix time range">
+            <button class="mix-range is-active" type="button" data-mix-range="7d" aria-pressed="true">Weekly</button>
+            <button class="mix-range" type="button" data-mix-range="30d" aria-pressed="false">Monthly</button>
+            <button class="mix-range" type="button" data-mix-range="365d" aria-pressed="false">Yearly</button>
+            <button class="mix-range" type="button" data-mix-range="all" aria-pressed="false">All</button>
+          </div>
         </header>
         <div class="protection-mix-layout">
           <div id="protection-mix-chart" class="protection-mix-chart is-empty" role="img" aria-label="No blocked activity recorded yet">

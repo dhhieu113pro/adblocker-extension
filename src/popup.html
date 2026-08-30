@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="popup.css" />
   <link rel="stylesheet" href="popup-scrollbar.css" />
   <link rel="stylesheet" href="popup-theme.css" />
+  <link rel="stylesheet" href="popup-report-summary.css" />
   <script src="popup-theme.ts" type="module"></script>
 </head>
 <body>
@@ -59,6 +60,26 @@
         <div class="signal signal-end">
           <span class="signal-value" id="ai-category-text">General</span>
           <span class="signal-label">Page type</span>
+        </div>
+      </section>
+
+      <section class="overview-mix" aria-labelledby="protection-mix-heading">
+        <header class="overview-mix-heading">
+          <h2 id="protection-mix-heading">Protection mix</h2>
+          <span>All-time local report</span>
+        </header>
+        <div class="protection-mix-layout">
+          <div id="protection-mix-chart" class="protection-mix-chart is-empty" role="img" aria-label="No blocked activity recorded yet">
+            <div class="protection-mix-center">
+              <strong id="protection-mix-total">0</strong>
+              <span>blocked</span>
+            </div>
+          </div>
+          <div class="protection-mix-legend" aria-hidden="true">
+            <div class="protection-mix-item"><span class="mix-dot"></span><span>Ads</span><strong id="protection-mix-ads">0</strong></div>
+            <div class="protection-mix-item"><span class="mix-dot trackers"></span><span>Trackers</span><strong id="protection-mix-trackers">0</strong></div>
+            <div class="protection-mix-item"><span class="mix-dot popups"></span><span>Popups</span><strong id="protection-mix-popups">0</strong></div>
+          </div>
         </div>
       </section>
 
@@ -141,13 +162,16 @@
       </div>
     </section>
 
-    <footer class="privacy-note">
-      <span class="privacy-dot" aria-hidden="true"></span>
-      Image analysis runs locally in your browser.
-      <a class="text-button" href="report.html" target="_blank" rel="noopener">Reports</a>
+    <footer class="popup-footer">
+      <div class="privacy-note">
+        <span class="privacy-dot" aria-hidden="true"></span>
+        <span>Image analysis runs locally in your browser.</span>
+      </div>
+      <a class="report-button" href="report.html" target="_blank" rel="noopener">Reports</a>
     </footer>
   </main>
 
+  <script src="popup-report-summary.ts" type="module"></script>
   <script src="popup.ts" type="module"></script>
 </body>
 </html>

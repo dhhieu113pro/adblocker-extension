@@ -3,8 +3,12 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const popupHtml = await readFile(new URL("../src/popup.html", import.meta.url), "utf8");
-const popupTs = await readFile(new URL("../src/popup.ts", import.meta.url), "utf8");
-const popupCss = await readFile(new URL("../src/popup.css", import.meta.url), "utf8");
+const popupMainTs = await readFile(new URL("../src/popup.ts", import.meta.url), "utf8");
+const popupThemeTs = await readFile(new URL("../src/popup-theme.ts", import.meta.url), "utf8").catch(() => "");
+const popupTs = `${popupMainTs}\n${popupThemeTs}`;
+const popupMainCss = await readFile(new URL("../src/popup.css", import.meta.url), "utf8");
+const popupThemeCss = await readFile(new URL("../src/popup-theme.css", import.meta.url), "utf8").catch(() => "");
+const popupCss = `${popupMainCss}\n${popupThemeCss}`;
 
 test("popup settings expose System, Light, and Dark theme modes", () => {
   assert.match(popupHtml, /id=["']theme-mode-select["']/);

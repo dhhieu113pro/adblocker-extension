@@ -82,6 +82,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       try {
         const classifier = await getClipClassifier();
         const candidate_labels = [
+          "a sports betting or online casino gambling website",
           "a movie streaming website with a video player",
           "a manga or comic book reader page with images",
           "a news website article with headers",

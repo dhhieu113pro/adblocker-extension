@@ -125,7 +125,7 @@ class AdBlockerOverlay {
 
   markSafetyScanActivity() {
     this.lastSafetyScanActivityAt = Date.now();
-    if (!document.hidden && this.autoHideAds && !this.siteDisabled) this.scheduleSafetyScan(this.safetyScanFastMs);
+    if (!document.hidden && this.autoHideAds && !this.siteDisabled && !this.safetyScanTimer) this.scheduleSafetyScan(this.safetyScanFastMs);
   }
 
   getSafetyScanDelay() {

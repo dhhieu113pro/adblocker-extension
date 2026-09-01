@@ -1,4 +1,8 @@
 import { pipeline, env } from "@xenova/transformers";
+import {
+  chooseEnsembleResults,
+  shouldReviewWithSecondModel,
+} from "./vision-ensemble-policy.mjs";
 
 // Configure transformers.js environment for extension offscreen context
 env.allowLocalModels = false;
@@ -48,6 +52,23 @@ async function getMobileNetClassifier() {
   }
 }
 
+const AD_CANDIDATE_LABELS = [
+  "gambling advertisement banner",
+  "promotional ad banner",
+  "sports betting banner",
+  "regular website photo or graphic"
+];
+
+async function classifyAdWithModel(model: "clip" | "mobilenet", imageDataUrl: string) {
+  if (model === "mobilenet") {
+    const classifier = await getMobileNetClassifier();
+    return classifier(imageDataUrl);
+  }
+
+  const classifier = await getClipClassifier();
+  return classifier(imageDataUrl, AD_CANDIDATE_LABELS);
+}
+
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.target !== "offscreen") return false;
 
@@ -55,20 +76,23 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     (async () => {
       try {
         const selectedModel = message.model === "clip" ? "clip" : "mobilenet";
-        const classifier = selectedModel === "mobilenet"
-          ? await getMobileNetClassifier()
-          : await getClipClassifier();
-        const candidate_labels = [
-          "gambling advertisement banner",
-          "promotional ad banner",
-          "sports betting banner",
-          "regular website photo or graphic"
-        ];
+        const primaryOutput = await classifyAdWithModel(selectedModel, message.imageDataUrl);
 
-        const output = selectedModel === "mobilenet"
-          ? await classifier(message.imageDataUrl)
-          : await classifier(message.imageDataUrl, candidate_labels);
-        sendResponse({ success: true, results: output, model: selectedModel });
+        let output = primaryOutput;
+        let reviewedBy: string | undefined;
+        if (shouldReviewWithSecondModel(primaryOutput)) {
+          const secondaryModel: "clip" | "mobilenet" = selectedModel === "clip" ? "mobilenet" : "clip";
+          const secondaryOutput = await classifyAdWithModel(secondaryModel, message.imageDataUrl);
+          output = chooseEnsembleResults(primaryOutput, secondaryOutput);
+          reviewedBy = secondaryModel;
+        }
+
+        sendResponse({
+          success: true,
+          results: output,
+          model: selectedModel,
+          ...(reviewedBy ? { reviewedBy } : {}),
+        });
       } catch (err: any) {
         console.error("[Offscreen Vision]", err);
         sendResponse({ error: err?.message || String(err) });

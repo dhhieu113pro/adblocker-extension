@@ -103,7 +103,10 @@ test("AI decisions use allow, review, and block confidence zones", () => {
   assert.equal(classifyAiDecision({ isAd: true, confidence: 31 }), "review");
   assert.equal(classifyAiDecision({ isAd: true, confidence: 84 }), "review");
   assert.equal(classifyAiDecision({ isAd: true, confidence: 85 }), "block");
-  assert.equal(classifyAiDecision({ isAd: true, confidence: 60 }, { allowMax: 50, blockMin: 70 }), "review");
+  const custom = { allowMax: 50, blockMin: 70 };
+  assert.equal(classifyAiDecision({ isAd: true, confidence: 50 }, custom), "allow");
+  assert.equal(classifyAiDecision({ isAd: true, confidence: 60 }, custom), "review");
+  assert.equal(classifyAiDecision({ isAd: true, confidence: 70 }, custom), "block");
 });
 
 test("context review request carries only structured evidence", () => {
@@ -133,6 +136,17 @@ test("context review request carries only structured evidence", () => {
       firstModelConfidence: 61,
     },
   });
+  const normal = buildContextReviewRequest({
+    pageUrl: "https://news.site.test/article",
+    imageUrl: "https://cdn.site.test/photo.jpg",
+    linkUrl: "https://news.site.test/article",
+    linkRel: "nofollow",
+    firstModelResult: { isAd: false, confidence: 75 },
+  });
+  assert.equal(normal.evidence.sponsored, false);
+  assert.equal(normal.evidence.explicitAdControl, false);
+  assert.equal(normal.evidence.firstModelIsAd, false);
+  assert.equal(normal.evidence.firstModelConfidence, 75);
   const empty = buildContextReviewRequest({ pageUrl: "bad", imageUrl: "bad", linkUrl: "bad" });
   assert.equal(empty.evidence.pageHost, "");
   assert.equal(empty.evidence.imageHost, "");

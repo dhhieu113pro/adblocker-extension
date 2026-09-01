@@ -75,7 +75,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === "clipClassifyAd") {
     (async () => {
       try {
-        const selectedModel: "clip" | "mobilenet" = message.model === "clip" ? "clip" : "mobilenet";
+        const selectedModel = message.model === "clip" ? "clip" : "mobilenet";
         const primaryOutput = await classifyAdWithModel(selectedModel, message.imageDataUrl);
 
         let output = primaryOutput;

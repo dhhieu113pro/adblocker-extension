@@ -160,6 +160,7 @@ test("context review request carries only structured evidence", () => {
 test("automatic blocking defaults to the conservative threshold", () => {
   assert.equal(shouldBlockDetectionResult(null), false);
   assert.equal(shouldBlockDetectionResult({ isAd: false, confidence: 99 }), false);
+  assert.equal(shouldBlockDetectionResult({ isAd: true }), false);
   assert.equal(shouldBlockDetectionResult({ isAd: true, confidence: 84 }), false);
   assert.equal(shouldBlockDetectionResult({ isAd: true, confidence: 85 }), true);
   assert.equal(shouldBlockDetectionResult({ isAd: true, confidence: 94 }, 95), false);

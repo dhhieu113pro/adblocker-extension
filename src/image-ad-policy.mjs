@@ -1,6 +1,7 @@
 const KNOWN_AD_HOST_MARKERS = [
   "doubleclick.net", "googlesyndication.com", "adservice.google.com", "adnxs.com",
   "taboola.com", "outbrain.com", "admicro.vn", "eclick.vn", "adtima.vn",
+  "api.mamphim.site", "8svui.com",
 ];
 
 const EXPLICIT_AD_PATH_SEGMENTS = new Set([
@@ -22,24 +23,23 @@ function isEligibleImageSource(url, alt, parentClasses) {
     !normalizedUrl.startsWith("chrome-extension://");
 }
 
-function parseHttpUrl(value) {
+function parseUrl(value) {
   try {
-    const parsed = new URL(String(value));
-    return parsed.protocol === "http:" || parsed.protocol === "https:" ? parsed : null;
+    return new URL(String(value));
   } catch {
     return null;
   }
 }
 
 function hasKnownAdHost(value) {
-  const parsed = parseHttpUrl(value);
+  const parsed = parseUrl(value);
   if (!parsed) return false;
   const host = parsed.hostname.toLowerCase();
   return KNOWN_AD_HOST_MARKERS.some((marker) => host === marker || host.endsWith(`.${marker}`));
 }
 
 function hasExplicitAdPath(value) {
-  const parsed = parseHttpUrl(value);
+  const parsed = parseUrl(value);
   if (!parsed) return false;
   const segments = parsed.pathname
     .toLowerCase()
@@ -137,9 +137,9 @@ export function buildContextReviewRequest({
   hasCloseAdButton = false,
   firstModelResult = null,
 } = {}) {
-  const page = parseHttpUrl(pageUrl);
-  const image = parseHttpUrl(imageUrl);
-  const link = parseHttpUrl(linkUrl);
+  const page = parseUrl(pageUrl);
+  const image = parseUrl(imageUrl);
+  const link = parseUrl(linkUrl);
   return {
     type: "detectAd",
     imageUrl,

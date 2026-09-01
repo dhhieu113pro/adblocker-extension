@@ -13,14 +13,27 @@ function count(pathname) {
 }
 
 async function waitForExtensionServiceWorker(ctx) {
-  let workers = ctx.serviceWorkers();
-  if (workers.length === 0) {
-    await ctx.waitForEvent('serviceworker');
-    workers = ctx.serviceWorkers();
+  const findWorker = () => ctx.serviceWorkers().find((item) =>
+    item.url().startsWith('chrome-extension://') && item.url().includes('reporting-background')
+  );
+
+  let found = findWorker();
+  if (!found) {
+    const created = await ctx.waitForEvent('serviceworker');
+    if (created.url().startsWith('chrome-extension://') && created.url().includes('reporting-background')) {
+      found = created;
+    } else {
+      found = findWorker();
+    }
   }
-  const found = workers.find((item) => item.url().startsWith('chrome-extension://'));
-  if (!found) throw new Error('Extension service worker did not start');
+
+  if (!found) throw new Error('Extension reporting-background service worker did not start');
   return found;
+}
+
+async function withExtensionWorker(callback, arg) {
+  worker = await waitForExtensionServiceWorker(context);
+  return worker.evaluate(callback, arg);
 }
 
 
@@ -83,7 +96,7 @@ test.afterAll(async () => {
 
 test.beforeEach(async () => {
   requestCounts.clear();
-  await worker.evaluate(async () => {
+  await withExtensionWorker(async () => {
     await chrome.storage.sync.set({ autoHideAds: true, disabledSites: [], visionModel: 'clip' });
     await chrome.storage.local.remove('webllmClipCache');
   });
@@ -91,7 +104,7 @@ test.beforeEach(async () => {
 
 test('previously classified explicit ads are hidden from persisted cache without refetching pixels', async () => {
   const imageUrl = `${baseUrl}/ads/creative.svg`;
-  await worker.evaluate(async ({ imageUrl }) => {
+  await withExtensionWorker(async ({ imageUrl }) => {
     await chrome.storage.local.set({
       webllmClipCache: {
         [imageUrl]: {

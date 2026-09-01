@@ -25,7 +25,8 @@ function isEligibleImageSource(url, alt, parentClasses) {
 
 function parseUrl(value) {
   try {
-    return new URL(String(value));
+    const parsed = new URL(String(value));
+    return parsed.protocol === "http:" || parsed.protocol === "https:" ? parsed : null;
   } catch {
     return null;
   }

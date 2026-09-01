@@ -40,7 +40,7 @@ test.beforeAll(async () => {
     const url = new URL(req.url, 'http://127.0.0.1');
     count(url.pathname);
 
-    if (url.pathname === '/creative.svg') {
+    if (url.pathname === '/ads/creative.svg') {
       res.writeHead(200, { 'content-type': 'image/svg+xml', 'cache-control': 'no-store' });
       res.end('<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="200"><rect width="1000" height="200" fill="#ddd"/></svg>');
       return;
@@ -55,7 +55,7 @@ test.beforeAll(async () => {
     if (url.pathname === '/cached-page') {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
       res.end(`<!doctype html><html><body>
-        <img id="cached-ad" width="1000" height="200" src="${baseUrl}/creative.svg" />
+        <img id="cached-ad" width="1000" height="200" src="${baseUrl}/ads/creative.svg" />
       </body></html>`);
       return;
     }
@@ -89,8 +89,8 @@ test.beforeEach(async () => {
   });
 });
 
-test('previously classified ads are hidden from persisted cache without refetching pixels', async () => {
-  const imageUrl = `${baseUrl}/creative.svg`;
+test('previously classified explicit ads are hidden from persisted cache without refetching pixels', async () => {
+  const imageUrl = `${baseUrl}/ads/creative.svg`;
   await worker.evaluate(async ({ imageUrl }) => {
     await chrome.storage.local.set({
       webllmClipCache: {
@@ -112,7 +112,7 @@ test('previously classified ads are hidden from persisted cache without refetchi
     display: getComputedStyle(el).display,
   })), { timeout: 1000 }).toEqual({ hidden: true, display: 'none' });
 
-  expect(requestCounts.get('/creative.svg')).toBe(1);
+  expect(requestCounts.get('/ads/creative.svg')).toBe(1);
   await page.close();
 });
 

@@ -1,17 +1,12 @@
-const AD_URL_MARKERS = [
-  "storage/images/other", "api.mamphim", "banner", "ads", "adserver",
-  "vsbet", "colatv", "8svui", "i9.top", "betting", "casino", "nhacai",
-  "hoahong", "promotions", "affiliate", "sponsor", "game", "worldcup",
-  "eclick", "smartads", "adtima", "static.znews.vn/banner", "adsbyeclick",
-  "promo", "quangcao", "qc", "adcenter", "ad-center", "advert", "popup",
-  "populartooth", "admicro", "adnzone", "admzone", "doubleclick",
-  "googlesyndication", "adservice", "adnxs", "taboola", "outbrain",
+const KNOWN_AD_HOST_MARKERS = [
+  "doubleclick.net", "googlesyndication.com", "adservice.google.com", "adnxs.com",
+  "taboola.com", "outbrain.com", "admicro.vn", "eclick.vn", "adtima.vn",
 ];
 
-const IAB_IMAGE_SIZES = [
-  [728, 90], [468, 60], [320, 50], [300, 250], [336, 280],
-  [120, 600], [160, 600], [300, 600], [970, 90], [970, 250], [300, 100],
-];
+const EXPLICIT_AD_PATH_SEGMENTS = new Set([
+  "ad", "ads", "advert", "advertisement", "banner", "promo", "promotion",
+  "sponsor", "sponsored", "quangcao", "qc", "adcenter", "ad-server", "adserver",
+]);
 
 function isEligibleImageSource(url, alt, parentClasses) {
   const normalizedUrl = String(url).toLowerCase();
@@ -27,6 +22,32 @@ function isEligibleImageSource(url, alt, parentClasses) {
     !normalizedUrl.startsWith("chrome-extension://");
 }
 
+function parseHttpUrl(value) {
+  try {
+    const parsed = new URL(String(value));
+    return parsed.protocol === "http:" || parsed.protocol === "https:" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function hasKnownAdHost(value) {
+  const parsed = parseHttpUrl(value);
+  if (!parsed) return false;
+  const host = parsed.hostname.toLowerCase();
+  return KNOWN_AD_HOST_MARKERS.some((marker) => host === marker || host.endsWith(`.${marker}`));
+}
+
+function hasExplicitAdPath(value) {
+  const parsed = parseHttpUrl(value);
+  if (!parsed) return false;
+  const segments = parsed.pathname
+    .toLowerCase()
+    .split(/[\/_\-.]+/)
+    .filter(Boolean);
+  return segments.some((segment) => EXPLICIT_AD_PATH_SEGMENTS.has(segment));
+}
+
 export function shouldAnalyzeImage({ width = 0, height = 0, url = "", alt = "", parentClasses = "" } = {}) {
   if (!isEligibleImageSource(url, alt, parentClasses)) return false;
 
@@ -38,8 +59,6 @@ export function shouldAnalyzeImage({ width = 0, height = 0, url = "", alt = "", 
 }
 
 export function shouldAutoAnalyzeImageCandidate({
-  width = 0,
-  height = 0,
   url = "",
   alt = "",
   parentClasses = "",
@@ -48,28 +67,10 @@ export function shouldAutoAnalyzeImageCandidate({
   hasCloseAdButton = false,
 } = {}) {
   if (!isEligibleImageSource(url, alt, parentClasses)) return false;
-
-  if (width > 0 && height > 0) {
-    const ratio = width / height;
-    const inverseRatio = height / width;
-    if (ratio >= 3.0 || inverseRatio >= 3.0) return true;
-
-    const isIabSize = IAB_IMAGE_SIZES.some(
-      ([iabWidth, iabHeight]) => Math.abs(iabWidth - width) <= 25 && Math.abs(iabHeight - height) <= 20,
-    );
-    if (isIabSize) return true;
-  }
-
-  const normalizedUrl = String(url).toLowerCase();
-  if (AD_URL_MARKERS.some((marker) => normalizedUrl.includes(marker))) return true;
-
-  const normalizedLinkUrl = String(linkUrl).toLowerCase();
-  if (AD_URL_MARKERS.some((marker) => normalizedLinkUrl.includes(marker))) return true;
-
-  const normalizedRel = String(linkRel).toLowerCase();
-  if (normalizedRel.includes("sponsored") || normalizedRel.includes("nofollow")) return true;
-
-  return Boolean(hasCloseAdButton);
+  if (hasCloseAdButton) return true;
+  if (String(linkRel).toLowerCase().split(/\s+/).includes("sponsored")) return true;
+  if (hasKnownAdHost(url) || hasKnownAdHost(linkUrl)) return true;
+  return hasExplicitAdPath(url) || hasExplicitAdPath(linkUrl);
 }
 
 export function buildImageFingerprint({ imageUrl = "", linkUrl = "", width = 0, height = 0 } = {}) {
@@ -117,6 +118,48 @@ export function buildImageDetectionRequest({
   };
 }
 
-export function shouldBlockDetectionResult(result, minimumConfidence = 50) {
+export const DEFAULT_AI_THRESHOLDS = Object.freeze({ allowMax: 30, blockMin: 85 });
+
+export function classifyAiDecision(result, thresholds = DEFAULT_AI_THRESHOLDS) {
+  if (!result?.isAd) return "allow";
+  const confidence = Number(result.confidence || 0);
+  if (confidence >= thresholds.blockMin) return "block";
+  if (confidence <= thresholds.allowMax) return "allow";
+  return "review";
+}
+
+export function buildContextReviewRequest({
+  imageUrl = "",
+  imageDataUrl = "",
+  pageUrl = "",
+  linkUrl = "",
+  linkRel = "",
+  hasCloseAdButton = false,
+  firstModelResult = null,
+} = {}) {
+  const page = parseHttpUrl(pageUrl);
+  const image = parseHttpUrl(imageUrl);
+  const link = parseHttpUrl(linkUrl);
+  return {
+    type: "detectAd",
+    imageUrl,
+    imageDataUrl,
+    linkUrl,
+    linkRel,
+    hasCloseAdButton,
+    contextReview: true,
+    evidence: {
+      pageHost: page?.hostname || "",
+      imageHost: image?.hostname || "",
+      linkHost: link?.hostname || "",
+      sponsored: String(linkRel).toLowerCase().split(/\s+/).includes("sponsored"),
+      explicitAdControl: Boolean(hasCloseAdButton),
+      firstModelIsAd: Boolean(firstModelResult?.isAd),
+      firstModelConfidence: Number(firstModelResult?.confidence || 0),
+    },
+  };
+}
+
+export function shouldBlockDetectionResult(result, minimumConfidence = DEFAULT_AI_THRESHOLDS.blockMin) {
   return Boolean(result?.isAd) && Number(result?.confidence || 0) >= minimumConfidence;
 }

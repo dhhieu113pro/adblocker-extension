@@ -55,7 +55,7 @@ test.beforeAll(async () => {
 
     if (url.pathname === '/ads/creative.svg') {
       res.writeHead(200, { 'content-type': 'image/svg+xml', 'cache-control': 'no-store' });
-      res.end('<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="200"><rect width="1000" height="200" fill="#ddd"/></svg>');
+      res.end('<svg xmlns="http://www.w3.org/2000/svg" width="500" height="500"><rect width="500" height="500" fill="#ddd"/></svg>');
       return;
     }
 
@@ -68,7 +68,7 @@ test.beforeAll(async () => {
     if (url.pathname === '/cached-page') {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
       res.end(`<!doctype html><html><body>
-        <img id="cached-ad" width="1000" height="200" src="${baseUrl}/ads/creative.svg" />
+        <img id="cached-ad" width="500" height="500" src="${baseUrl}/ads/creative.svg" />
       </body></html>`);
       return;
     }

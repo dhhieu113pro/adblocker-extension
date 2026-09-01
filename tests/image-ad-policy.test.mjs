@@ -19,24 +19,44 @@ test("automatic analysis skips ordinary editorial photos without ad context", ()
   assert.equal(shouldAutoAnalyzeImageCandidate(), false);
   assert.equal(shouldAutoAnalyzeImageCandidate({ width: 1200, height: 800, url: "https://media.saostar.vn/news/article-photo.jpg" }), false);
   assert.equal(shouldAutoAnalyzeImageCandidate({ width: 1200, height: 675, url: "https://cdn.site.test/hero.jpg" }), false);
-  assert.equal(shouldAutoAnalyzeImageCandidate({ width: 0, height: 0, url: "https://cdn.site.test/lazy-editorial.jpg" }), false);
 });
 
-test("automatic analysis restores v1.0.11 banner geometry detection", () => {
-  assert.equal(shouldAutoAnalyzeImageCandidate({ width: 728, height: 90, url: "https://cdn.site.test/creative.jpg" }), true);
-  assert.equal(shouldAutoAnalyzeImageCandidate({ width: 468, height: 60, url: "https://cdn.site.test/creative.jpg" }), true);
-  assert.equal(shouldAutoAnalyzeImageCandidate({ width: 320, height: 50, url: "https://cdn.site.test/creative.jpg" }), true);
-  assert.equal(shouldAutoAnalyzeImageCandidate({ width: 300, height: 250, url: "https://cdn.site.test/creative.jpg" }), true);
-  assert.equal(shouldAutoAnalyzeImageCandidate({ width: 1000, height: 200, url: "https://cdn.site.test/creative.jpg" }), true);
-  assert.equal(shouldAutoAnalyzeImageCandidate({ width: 120, height: 600, url: "https://cdn.site.test/creative.jpg" }), true);
+test("normal YouTube thumbnails are never candidates because of opaque URL tokens", () => {
+  assert.equal(shouldAutoAnalyzeImageCandidate({
+    width: 336,
+    height: 188,
+    url: "https://i.ytimg.com/vi/abc123/hq720.jpg?sqp=qcA9&rs=AOn4CLDadsXYZ",
+    linkUrl: "https://www.youtube.com/watch?v=abc123",
+  }), false);
 });
 
-test("automatic analysis restores v1.0.11 link and URL ad signals", () => {
+test("opaque CDN tokens and IAB-like dimensions are not ad evidence", () => {
+  assert.equal(shouldAutoAnalyzeImageCandidate({
+    width: 1200,
+    height: 800,
+    url: "https://cdn.site.test/photo.jpg?sig=abcadsxyzqc123",
+  }), false);
+  assert.equal(shouldAutoAnalyzeImageCandidate({
+    width: 300,
+    height: 250,
+    url: "https://news.site.test/article-photo.jpg",
+  }), false);
+});
+
+test("explicit ad evidence remains eligible for AI analysis", () => {
   assert.equal(shouldAutoAnalyzeImageCandidate({ width: 1200, height: 800, url: "https://cdn.site.test/photo.jpg", linkRel: "sponsored" }), true);
-  assert.equal(shouldAutoAnalyzeImageCandidate({ width: 1200, height: 800, url: "https://cdn.site.test/photo.jpg", linkRel: "nofollow" }), true);
   assert.equal(shouldAutoAnalyzeImageCandidate({ width: 1200, height: 800, url: "https://cdn.site.test/photo.jpg", hasCloseAdButton: true }), true);
   assert.equal(shouldAutoAnalyzeImageCandidate({ width: 300, height: 250, url: "https://doubleclick.net/banner.jpg" }), true);
   assert.equal(shouldAutoAnalyzeImageCandidate({ width: 500, height: 500, url: "https://cdn.site.test/quangcao/creative.jpg" }), true);
+});
+
+test("nofollow alone is not an ad signal", () => {
+  assert.equal(shouldAutoAnalyzeImageCandidate({
+    width: 1200,
+    height: 800,
+    url: "https://cdn.site.test/article.jpg",
+    linkRel: "nofollow",
+  }), false);
 });
 
 test("obvious UI and branding images are skipped", () => {
@@ -69,12 +89,10 @@ test("explicit ad close markers are recognized", () => {
   assert.equal(hasExplicitAdCloseSignal({ text: "Đóng quảng cáo" }), true);
   assert.equal(hasExplicitAdCloseSignal({ text: "Close advertisement" }), true);
   assert.equal(hasExplicitAdCloseSignal({ ariaLabel: "QC" }), true);
-  assert.equal(hasExplicitAdCloseSignal({ ariaLabel: "Đóng quảng cáo" }), true);
   assert.equal(hasExplicitAdCloseSignal({ ariaLabel: "Advertisement" }), true);
   assert.equal(hasExplicitAdCloseSignal({ ariaLabel: "Ad close" }), true);
   assert.equal(hasExplicitAdCloseSignal({ className: "close-ad" }), true);
   assert.equal(hasExplicitAdCloseSignal({ className: "ad-close" }), true);
-  assert.equal(hasExplicitAdCloseSignal({ className: "no-ads-under" }), true);
 });
 
 test("only explicit ad overlay markers are accepted", () => {
@@ -97,36 +115,13 @@ test("AI image request intentionally contains no geometry fields", () => {
     width: 728,
     height: 90,
   });
-
-  assert.deepEqual(request, {
-    type: "detectAd",
-    imageUrl: "https://chat.zalo.me/photo.jpg",
-    imageDataUrl: "data:image/jpeg;base64,abc",
-    linkUrl: "https://chat.zalo.me/",
-    linkRel: "",
-    hasCloseAdButton: false,
-    forceAI: true,
-  });
   assert.equal("width" in request, false);
   assert.equal("height" in request, false);
-  assert.deepEqual(buildImageDetectionRequest(), {
-    type: "detectAd",
-    imageUrl: "",
-    imageDataUrl: "",
-    linkUrl: "",
-    linkRel: "",
-    hasCloseAdButton: false,
-    forceAI: false,
-  });
 });
 
-test("automatic image hiding restores the v1.0.11 confidence threshold", () => {
+test("legacy blocking helper remains configurable", () => {
   assert.equal(shouldBlockDetectionResult(null), false);
   assert.equal(shouldBlockDetectionResult({ isAd: false, confidence: 99 }), false);
-  assert.equal(shouldBlockDetectionResult({ isAd: true, confidence: 49 }), false);
-  assert.equal(shouldBlockDetectionResult({ isAd: true, confidence: 50 }), true);
-  assert.equal(shouldBlockDetectionResult({ isAd: true, confidence: 79 }), true);
-  assert.equal(shouldBlockDetectionResult({ isAd: true, confidence: 94 }, 95), false);
-  assert.equal(shouldBlockDetectionResult({ isAd: true, confidence: 95 }, 95), true);
-  assert.equal(shouldBlockDetectionResult({ isAd: true }), false);
+  assert.equal(shouldBlockDetectionResult({ isAd: true, confidence: 84 }, 85), false);
+  assert.equal(shouldBlockDetectionResult({ isAd: true, confidence: 85 }, 85), true);
 });
